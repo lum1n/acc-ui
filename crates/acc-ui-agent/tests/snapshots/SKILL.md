@@ -54,7 +54,7 @@ Set `type` to one of these. `?` marks optional fields.
 - **`row`**: Children side by side. Fields: `children?` [node]; `gap?` Gap; `wrap?` boolean (Wrap onto more lines when the row is too narrow).
 - **`card`**: A titled box around its children. Fields: `title?` string; `subtitle?` string; `icon?` string (One emoji shown before the title); `tone?` Tone; `children?` [node]; `action?` action (Runs when the card is tapped).
 - **`kv`**: Label/value pairs. Fields: `items` [KvItem].
-- **`table`**: Rows and columns of text. Fields: `columns` [Column]; `rows` [[string]] (One array of cells per row, in column order).
+- **`table`**: Rows and columns of text. Fields: `columns` [Column]; `rows` [[string]] (One array of cells per row, in column order. Cells may hold inline markdown (`code`, **bold**, links)).
 - **`badge`**: A small coloured label. Fields: `text` string; `tone?` Tone.
 - **`progress`**: A progress bar. Fields: `value` number (Progress so far, from 0 to `max`); `max?` number (Defaults to 1); `label?` string; `tone?` Tone.
 - **`checklist`**: Steps with a state each. Fields: `items` [CheckItem].
@@ -67,6 +67,8 @@ Set `type` to one of these. `?` marks optional fields.
 - **`image`**: An image. Fields: `src` string (An `https:` URL, a `data:image/...` URL, or an absolute path on the host); `alt?` string; `caption?` string.
 - **`markdown`**: Markdown text. Fields: `text` string.
 - **`html`**: Self-contained HTML in a sandbox: no network, no navigation. Fields: `html` string (A full document or a fragment. Inline all CSS, JS and images: the sandbox fetches nothing and opens links only after the user confirms); `height?` integer (Preferred height in points; the content's own height is used if unset).
+- **`code`**: Source code or other preformatted text. Fields: `text` string; `language?` string (The fence's language (`rust`, `sh`, `diff`), when known).
+- **`disclosure`**: A summary line whose children show when the user opens it. Fields: `summary` string (The line shown while it's closed); `children?` [node]; `open?` boolean (Starts open. Defaults to closed).
 - **`button`**: A button that runs an action when tapped. Fields: `label` string; `action` action; `style?` ButtonStyle.
 - **`chips`**: Quick-reply chips; each runs its action when tapped. Fields: `options` [Chip].
 - **`form`**: Input fields with a submit button. Fields: `fields` [Field]; `submit_label?` string (Defaults to "Submit").

@@ -21,6 +21,7 @@ pub mod event;
 mod model;
 mod restore;
 mod shell;
+mod translate;
 
 use std::collections::{HashMap, HashSet};
 

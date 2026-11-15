@@ -11,6 +11,9 @@
 //!   take, with limits and a plain-text fallback.
 //! - [`session`]: the session model. ACC events in; header, now, plan,
 //!   needs-you, files, commands, subagents and turns out.
+//! - [`blocks`]: an agent's markdown as blocks (tables, checklists,
+//!   callouts, diagrams, code), the rest left as markdown.
+//! - [`links`]: files, PRs, commits and URLs in agent text.
 //! - [`fence`]: fences that hold components (` ```mermaid `, ` ```chart `).
 //! - [`conventions`]: optional text that nudges agents toward markdown
 //!   that renders best.
@@ -18,15 +21,19 @@
 //! Agents writing specs themselves (the `acc_ui` MCP server, a spec skill)
 //! is opt-in and lives in the `acc-ui-agent` crate.
 
+pub mod blocks;
 pub mod conventions;
 pub mod fence;
+pub mod links;
 pub mod normalize;
 pub mod schema;
 pub mod session;
 pub mod spec;
 
+pub use blocks::markdown_blocks;
 pub use conventions::{conventions, conventions_skill};
 pub use fence::{is_component_fence, parse_fence};
+pub use links::{Link, LinkKind, detect_links};
 pub use normalize::{Normalized, normalize, normalize_value, valid_id};
 pub use schema::schema;
 pub use session::{Changes, SessionView, Snapshot};

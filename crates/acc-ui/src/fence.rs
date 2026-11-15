@@ -53,35 +53,43 @@ pub fn is_component_fence(info: &str) -> bool {
 /// otherwise the normalised spec, which is `None` with errors when the body
 /// is unusable (show the fence as code then).
 pub fn parse_fence(info: &str, body: &str) -> Option<Normalized> {
+    if info_words(info).0 == "acc-ui" {
+        return Some(normalize(body));
+    }
+    Some(match fence_node(info, body)? {
+        Ok(node) => normalize_value(json!({ "root": node })),
+        Err(e) => Normalized {
+            spec: None,
+            errors: vec![e],
+        },
+    })
+}
+
+/// The root node a closed component fence holds, before normalising, for
+/// embedding in a larger tree. `None` when the fence is not a component
+/// fence.
+pub(crate) fn fence_node(info: &str, body: &str) -> Option<Result<Value, String>> {
     if !is_component_fence(info) {
         return None;
     }
     let (lang, _) = info_words(info);
     Some(match lang.as_str() {
-        "acc-ui" => normalize(body),
-        "chart" if !body.trim_start().starts_with('{') => match csv_chart(body) {
-            Ok(chart) => normalize_value(json!({ "root": chart })),
-            Err(e) => Normalized {
-                spec: None,
-                errors: vec![e],
-            },
+        "acc-ui" => match serde_json::from_str::<Value>(body) {
+            Ok(Value::Object(mut spec)) => Ok(spec.remove("root").unwrap_or(Value::Object(spec))),
+            Ok(_) => Err("an acc-ui fence must hold a JSON object".to_owned()),
+            Err(e) => Err(format!("not valid JSON: {e}")),
         },
+        "chart" if !body.trim_start().starts_with('{') => csv_chart(body),
         "chart" => match serde_json::from_str::<Value>(body) {
             Ok(Value::Object(mut chart)) => {
                 chart.entry("type").or_insert_with(|| "chart".into());
-                normalize_value(json!({ "root": chart }))
+                Ok(Value::Object(chart))
             }
-            Ok(_) => Normalized {
-                spec: None,
-                errors: vec!["a chart fence must hold CSV or a JSON object".to_owned()],
-            },
-            Err(e) => Normalized {
-                spec: None,
-                errors: vec![format!("not valid JSON: {e}")],
-            },
+            Ok(_) => Err("a chart fence must hold CSV or a JSON object".to_owned()),
+            Err(e) => Err(format!("not valid JSON: {e}")),
         },
-        "mermaid" => normalize_value(json!({ "root": { "type": "mermaid", "code": body } })),
-        _ => normalize_value(json!({ "root": { "type": "html", "html": body } })),
+        "mermaid" => Ok(json!({ "type": "mermaid", "code": body })),
+        _ => Ok(json!({ "type": "html", "html": body })),
     })
 }
 
