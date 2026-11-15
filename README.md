@@ -36,9 +36,9 @@ instead of a top-to-bottom transcript
 | `plan()` | the to-do list with completed/total and the current entry |
 | `asks()` | approvals and questions waiting on the user |
 | `files()` | every file read or changed: net change, +/-, each edit's hunks, the turns that touched it |
-| `commands()` | each command unwrapped from its `zsh -lc '...'`, with status, exit code and an output tail |
+| `commands()` | each command unwrapped from its `zsh -lc '...'`, with a one-line headline, exit code, outcome (succeeded, failed, or unknown when the harness gives no exit code) and an output tail |
 | `subagents()` | each run of another agent: task, status, report, and how much it did |
-| `turns()` | each prompt with the agent's answer (its last message), a digest (`Edited 3 files (+19 −3) · ran 3 commands`), outcome, duration, the items it led to, and the turn's diff where the harness sends one |
+| `turns()` | each prompt with the agent's answer (its last message), a digest as structured parts (one chip each) and as a line (`Edited 3 files (+19 −3) · ran 3 commands`), outcome, duration, the items it led to and how many fold away, and the turn's diff where the harness sends one |
 
 ```rust
 let mut view = SessionView::new();
@@ -50,7 +50,8 @@ let view = SessionView::from_transcript(&saved)?; // an ACC session snapshot or 
 ```
 
 `apply_json` takes ACC's event JSON (a line of `acc run --json`) and returns the
-`Changes` it made. `from_transcript` rebuilds the same state from what ACC saved, for
+`Changes` it made; `file(path)`, `command(id)`, `subagent(id)`, `turn(index)` and
+`ask(request_id)` fetch just what changed. `from_transcript` rebuilds the same state from what ACC saved, for
 history and for sessions picked up without their events. acc-ui reads ACC's events with its own tolerant types, so unknown
 events and fields are ignored rather than failing.
 
@@ -186,6 +187,11 @@ scripts/swift-bindings.sh OUT_DIR    # Swift sources, for apps linking acc-ui-ff
 scripts/kotlin-bindings.sh OUT_DIR
 scripts/build-xcframework.sh         # macOS: bindings/swift with AccUIFFI.xcframework + AccUICore
 ```
+
+In Swift and Kotlin the session model is a `SessionView` object with the same methods
+(`applyJson`, `snapshot`, the region getters, `itemSpec`, `askSpec`) returning typed
+records, plus the free functions `markdownBlocks` and `detectLinks`. Links carry their
+range as UTF-8 bytes and as UTF-16 units, for `NSRange` and Kotlin strings.
 
 Sessh already links one Rust static library (acc-ffi), so it should depend on
 `crates/acc-ui-ffi` from that library rather than adding the xcframework. Two Rust

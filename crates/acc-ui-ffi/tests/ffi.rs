@@ -59,3 +59,95 @@ fn texts() {
     assert!(agent_skill_markdown().contains("name: acc-ui-components"));
     assert!(agent_instructions().contains("acc_ui_render"));
 }
+
+fn recorded(name: &str) -> String {
+    let path = format!("{}/../acc-ui/tests/sessions/{name}", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn session_view_replays_a_recorded_session() {
+    let view = SessionView::new();
+    view.set_root("/work".to_owned());
+    let mut touched_turns = 0;
+    for line in recorded("codex-fix-and-review.ndjson").lines() {
+        let ch = view.apply_json(line.to_owned()).unwrap();
+        touched_turns += ch.turns.len();
+        for id in &ch.commands {
+            assert!(view.command(id.clone()).is_some(), "changes name commands it has");
+        }
+        for path in &ch.files {
+            assert!(view.file(path.clone()).is_some());
+        }
+    }
+    assert!(touched_turns > 0);
+    let snap = view.snapshot();
+    assert_eq!(snap.header.turns as usize, snap.turns.len());
+    assert!(matches!(snap.header.state, RunState::Done));
+    let fix = &snap.turns[0];
+    assert!(fix.digest.summary.starts_with("Edited 3 files"));
+    assert!(matches!(fix.digest.parts[0], DigestPart::Edited { files: 3, .. }));
+    assert!(fix.duration_ms.is_some());
+    assert!(
+        snap.commands
+            .iter()
+            .all(|c| c.outcome == CommandOutcome::Succeeded)
+    );
+    assert!(snap.files.iter().any(|f| f.display == "inventory.py"));
+    assert_eq!(view.turn(0).unwrap(), *fix);
+    assert!(view.turn(99).is_none());
+
+    let answer = fix.narrative_item.clone().unwrap();
+    let spec = view.item_spec(answer).unwrap();
+    assert!(spec.spec_json.is_some(), "{:?}", spec.errors);
+    assert!(view.apply_json("not json".to_owned()).is_err());
+}
+
+#[test]
+fn session_view_restores_from_a_transcript_and_answers_asks() {
+    let transcript = r#"{"items":[
+        {"id":"u","kind":"user_message","status":"completed","text":"list files","detail":{"type":"text"},"seq":0},
+        {"id":"c","kind":"command_execution","status":"completed","text":"",
+         "detail":{"type":"command","tool":"Bash","command":"ls","output":"a"},"seq":1}
+    ],"next_seq":2}"#;
+    let view = SessionView::from_transcript(transcript.to_owned()).unwrap();
+    assert_eq!(view.turns()[0].prompt.as_deref(), Some("list files"));
+    assert_eq!(view.commands()[0].outcome, CommandOutcome::Unknown);
+    assert!(SessionView::from_transcript("nope".to_owned()).is_err());
+
+    let view = SessionView::new();
+    view.apply_json(
+        r#"{"type":"permission_requested","request_id":"r","title":"Bash: ls",
+            "options":[{"id":"y","label":"Allow","kind":"allow_once"}],
+            "detail":{"type":"command","tool":"Bash","command":"ls","output":""}}"#
+            .replace('\n', ""),
+    )
+    .unwrap();
+    let ask = view.ask("r".to_owned()).unwrap();
+    assert_eq!(ask.options[0].kind, Some(OptionKind::AllowOnce));
+    assert!(matches!(ask.subject, Some(ItemDetail::Command { .. })));
+    let spec = view.ask_spec("r".to_owned()).unwrap();
+    assert!(spec.spec_json.unwrap().contains("\"request\""));
+    assert!(view.answered("r".to_owned()).asks);
+    assert!(view.ask_spec("r".to_owned()).is_none());
+}
+
+#[test]
+fn links_carry_utf16_ranges() {
+    let text = "Fixed 🎉 in src/main.rs:12 and https://x.dev".to_owned();
+    let links = detect_links(text.clone(), Some("/repo".to_owned()));
+    let file = links.iter().find(|l| l.kind == LinkKind::File).unwrap();
+    assert_eq!(&text[file.start as usize..file.end as usize], "src/main.rs:12");
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+    assert_eq!(
+        String::from_utf16(&utf16[file.start_utf16 as usize..file.end_utf16 as usize]).unwrap(),
+        "src/main.rs:12"
+    );
+    assert_eq!(
+        file.start - file.start_utf16,
+        2,
+        "the emoji is 4 bytes, 2 UTF-16 units"
+    );
+    let blocks = markdown_blocks("| a |\n|---|\n| 1 |".to_owned());
+    assert!(blocks.spec_json.unwrap().contains("table"));
+}

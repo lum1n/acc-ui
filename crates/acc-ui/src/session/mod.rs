@@ -313,6 +313,31 @@ impl SessionView {
         self.item_index.get(id).map(|&i| &self.items[i])
     }
 
+    /// A file by path, as [`Changes::files`] names it.
+    pub fn file(&self, path: &str) -> Option<&FileEntry> {
+        self.file_index.get(path).map(|&i| &self.files[i])
+    }
+
+    /// A command by item id, as [`Changes::commands`] names it.
+    pub fn command(&self, item_id: &str) -> Option<&CommandEntry> {
+        self.command_index.get(item_id).map(|&i| &self.commands[i])
+    }
+
+    /// A subagent by item id, as [`Changes::subagents`] names it.
+    pub fn subagent(&self, item_id: &str) -> Option<&SubagentEntry> {
+        self.subagent_index.get(item_id).map(|&i| &self.subagents[i])
+    }
+
+    /// A turn by index, as [`Changes::turns`] names it.
+    pub fn turn(&self, index: usize) -> Option<&Turn> {
+        self.turns.get(index)
+    }
+
+    /// A waiting ask by request id.
+    pub fn ask(&self, request_id: &str) -> Option<&Ask> {
+        self.asks.iter().find(|a| a.request_id == request_id)
+    }
+
     /// What the agent and its subagents are doing right now, oldest first.
     pub fn now(&self) -> Vec<Activity> {
         self.items

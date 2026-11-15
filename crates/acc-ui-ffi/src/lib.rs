@@ -4,15 +4,19 @@
 //! layer (`acc-ui-agent`: the `acc_ui` MCP server, the spec skill, the
 //! submit tag) are both here; using only the core costs the agent nothing.
 //!
-//! JSON crosses the boundary as strings: specs go to the renderer as the
-//! flat JSON [`acc_ui::normalize`] produces, which it decodes with its own
-//! types. Everything else stays in the `acc-ui` crate.
+//! Specs cross the boundary as the flat JSON [`acc_ui::normalize`]
+//! produces, which renderers decode with their own types. The session
+//! model ([`SessionView`]) crosses as typed records.
 
 use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
 uniffi::setup_scaffolding!();
+
+mod session;
+
+pub use session::*;
 
 /// Fields are `detail`, not `message`, which would clash with Kotlin's
 /// `Throwable.message`.
