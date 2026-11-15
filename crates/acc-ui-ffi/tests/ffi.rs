@@ -151,3 +151,30 @@ fn links_carry_utf16_ranges() {
     let blocks = markdown_blocks("| a |\n|---|\n| 1 |".to_owned());
     assert!(blocks.spec_json.unwrap().contains("table"));
 }
+
+#[test]
+fn questions_answer_through_a_draft() {
+    let view = SessionView::new();
+    let event = serde_json::json!({"type":"permission_requested","request_id":"q","title":"Which DB?",
+        "kind":"question","native":{"questions":[
+            {"id":"q1","question":"Which DB?","isOther":false,"options":[{"label":"Postgres","description":"server"}]},
+            {"id":"q2","question":"Name?","isOther":true,"isSecret":true,"options":null}]}});
+    view.apply_json(event.to_string()).unwrap();
+    let ask = view.ask("q".into()).unwrap();
+    assert_eq!(ask.questions[0].options[0].description.as_deref(), Some("server"));
+    assert!(ask.questions[1].secret && ask.questions[1].allows_text);
+
+    let draft = view.answer_draft("q".into()).unwrap();
+    assert_eq!(draft.missing(), [0, 1]);
+    assert!(draft.pick(0, 0));
+    assert!(!draft.set_text(0, "MySQL".into()));
+    assert!(draft.set_text(1, "acme".into()));
+    assert_eq!(draft.picked(0), [0]);
+    assert_eq!(draft.option_id().as_deref(), Some(r#"[["Postgres"],["acme"]]"#));
+    assert_eq!(
+        encode_answers(vec![vec!["Postgres".into()], vec!["acme".into()]]),
+        draft.option_id().unwrap()
+    );
+    assert!(view.answered(draft.request_id()).asks);
+    assert!(view.answer_draft("q".into()).is_none());
+}

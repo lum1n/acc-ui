@@ -43,6 +43,8 @@ struct StoredAsk {
     item_id: Option<String>,
     #[serde(default)]
     detail: Option<Detail>,
+    #[serde(default)]
+    native: Value,
 }
 
 impl SessionView {
@@ -128,6 +130,7 @@ impl SessionView {
                         kind: a.kind,
                         item_id: a.item_id,
                         detail: a.detail,
+                        native: a.native,
                     });
                 }
             }

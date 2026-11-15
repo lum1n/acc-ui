@@ -4,7 +4,8 @@
 //!
 //! Every field has a default and unknown event types, item kinds and detail
 //! types parse as `Unknown`, so a newer ACC never breaks an older acc-ui.
-//! Only what the session model reads is kept; `native` payloads are ignored.
+//! Only what the session model reads is kept; `native` payloads are ignored
+//! except a permission request's, which holds its questions and plan.
 //! The recorded sessions in `tests/sessions` catch drift.
 
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,9 @@ pub enum Event {
         item_id: Option<String>,
         #[serde(default)]
         detail: Option<Detail>,
+        /// The harness's own request: questions and plans live here.
+        #[serde(default)]
+        native: Value,
     },
     PermissionResolved {
         request_id: String,
