@@ -1,0 +1,834 @@
+//! The session model: ACC events in, regions out.
+//!
+//! A [`SessionView`] folds a session's events into what a session screen
+//! shows, instead of a top-to-bottom transcript:
+//!
+//! | Region | From |
+//! |---|---|
+//! | [`Header`] | session start, state, title, usage, quota |
+//! | Now ([`Activity`]) | the items running right now |
+//! | Plan ([`PlanView`]) | the agent's to-do list |
+//! | Needs you ([`Ask`]) | approvals and questions waiting on the user |
+//! | Files ([`FileEntry`]) | files read and changed, with their edits |
+//! | Commands ([`CommandEntry`]) | shell commands, exit codes, output tails |
+//! | Subagents ([`SubagentEntry`]) | other agents' runs and their reports |
+//! | Turns ([`Turn`]) | each prompt and the items it led to |
+//!
+//! Feed it every event, in order, with [`SessionView::apply_json`]. Each call
+//! returns the [`Changes`] it made, so a renderer redraws only those.
+
+pub mod event;
+mod model;
+mod shell;
+
+use std::collections::HashMap;
+
+use serde::Serialize;
+
+pub use event::Event;
+use event::{Detail, FileChangeKind, ItemKind, ItemStatus, RunState, ToolKind};
+pub use model::{
+    Activity, ActivityKind, Ask, CommandEntry, FileEdit, FileEntry, Header, ItemView, OUTPUT_TAIL_LINES,
+    PlanView, SubagentEntry, Turn,
+};
+pub use shell::unwrap_shell;
+
+/// Longest title taken from a prompt.
+const TITLE_CHARS: usize = 80;
+
+/// Notices kept; older ones are dropped.
+const MAX_NOTICES: usize = 50;
+
+/// What one call changed. Ids are item ids; files are keyed by path.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Changes {
+    pub header: bool,
+    pub now: bool,
+    pub plan: bool,
+    pub asks: bool,
+    pub notices: bool,
+    pub files: Vec<String>,
+    pub commands: Vec<String>,
+    pub subagents: Vec<String>,
+    pub turns: Vec<usize>,
+    pub items: Vec<String>,
+}
+
+impl Changes {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn push<T: PartialEq>(list: &mut Vec<T>, v: T) {
+        if !list.contains(&v) {
+            list.push(v);
+        }
+    }
+}
+
+/// Everything a [`SessionView`] holds, for golden tests and for apps that
+/// take the whole state at once.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Snapshot {
+    pub header: Header,
+    pub now: Vec<Activity>,
+    pub plan: Option<PlanView>,
+    pub asks: Vec<Ask>,
+    pub files: Vec<FileEntry>,
+    pub commands: Vec<CommandEntry>,
+    pub subagents: Vec<SubagentEntry>,
+    pub turns: Vec<Turn>,
+    pub notices: Vec<String>,
+    pub items: Vec<ItemView>,
+}
+
+/// A session's live state, built from its ACC events.
+#[derive(Debug, Clone, Default)]
+pub struct SessionView {
+    header: Header,
+    /// The client set the root; commands don't override it.
+    root_fixed: bool,
+    /// The harness named the session; prompts don't override it.
+    titled: bool,
+    plan: Option<PlanView>,
+    asks: Vec<Ask>,
+    files: Vec<FileEntry>,
+    file_index: HashMap<String, usize>,
+    commands: Vec<CommandEntry>,
+    command_index: HashMap<String, usize>,
+    subagents: Vec<SubagentEntry>,
+    subagent_index: HashMap<String, usize>,
+    turns: Vec<Turn>,
+    notices: Vec<String>,
+    items: Vec<ItemView>,
+    item_index: HashMap<String, usize>,
+}
+
+impl SessionView {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the session's working directory, which the client knows from
+    /// how it started the session. Paths under it are shown relative.
+    pub fn set_root(&mut self, root: impl Into<String>) {
+        self.header.root = Some(root.into());
+        self.root_fixed = true;
+        for f in &mut self.files {
+            f.display = display_path(self.header.root.as_deref(), &f.path);
+        }
+    }
+
+    /// Applies one event as ACC serialises it (one line of `acc run
+    /// --json`, or an event's JSON from the bindings). Unknown event types
+    /// change nothing; JSON that isn't an event is an error.
+    pub fn apply_json(&mut self, json: &str) -> Result<Changes, serde_json::Error> {
+        Ok(self.apply(serde_json::from_str(json)?))
+    }
+
+    /// Applies one event.
+    pub fn apply(&mut self, event: Event) -> Changes {
+        let mut ch = Changes::default();
+        match event {
+            Event::SessionStarted {
+                harness,
+                native_id,
+                model,
+            } => {
+                self.header.harness = non_empty(harness);
+                self.header.native_id = non_empty(native_id);
+                if model.is_some() {
+                    self.header.model = model;
+                }
+                ch.header = true;
+            }
+            Event::StateChanged { state, message } => {
+                self.header.state = state;
+                self.header.state_message = message;
+                ch.header = true;
+            }
+            Event::TitleChanged { title } => {
+                if !title.trim().is_empty() {
+                    self.header.title = Some(title);
+                    self.titled = true;
+                    ch.header = true;
+                }
+            }
+            Event::Usage(u) => {
+                self.header.usage = Some(u);
+                ch.header = true;
+            }
+            Event::Quota(q) => {
+                self.header.quota = Some(q);
+                ch.header = true;
+            }
+            Event::Notice { message } => {
+                self.notices.push(message);
+                if self.notices.len() > MAX_NOTICES {
+                    self.notices.remove(0);
+                }
+                ch.notices = true;
+            }
+            Event::Plan(p) => {
+                self.plan = Some(PlanView::new(p.entries, p.explanation));
+                ch.plan = true;
+            }
+            Event::ItemStarted {
+                id,
+                kind,
+                parent,
+                detail,
+                started_at_ms,
+            } => self.item_started(id, kind, parent, detail, started_at_ms, &mut ch),
+            Event::ItemDelta { id, text } => self.item_delta(&id, &text, &mut ch),
+            Event::ItemUpdated { id, detail } => {
+                self.item_detail(&id, detail, None, None, &mut ch);
+            }
+            Event::ItemCompleted {
+                id,
+                status,
+                detail,
+                completed_at_ms,
+            } => {
+                self.item_detail(&id, detail, Some(status), completed_at_ms, &mut ch);
+                self.clear_asks(&mut ch, |a| a.item_id.as_deref() == Some(id.as_str()));
+            }
+            Event::PermissionRequested {
+                request_id,
+                title,
+                options,
+                kind,
+                item_id,
+                detail,
+            } => {
+                let turn = item_id
+                    .as_deref()
+                    .and_then(|i| self.item(i))
+                    .map_or_else(|| self.current_turn(), |i| i.turn);
+                self.asks.retain(|a| a.request_id != request_id);
+                self.asks.push(Ask {
+                    request_id,
+                    kind,
+                    title,
+                    options,
+                    item_id,
+                    subject: detail,
+                    turn,
+                });
+                ch.asks = true;
+            }
+            Event::PermissionResolved { request_id } => {
+                self.clear_asks(&mut ch, |a| a.request_id == request_id);
+            }
+            Event::TurnDiff { diff, .. } => {
+                let t = self.open_turn(&mut ch);
+                self.turns[t].diff = Some(diff);
+                Changes::push(&mut ch.turns, t);
+            }
+            Event::TurnCompleted => {
+                self.close_turn(&mut ch);
+                self.clear_asks(&mut ch, |_| true);
+                ch.now = true;
+            }
+            Event::Exited { code } => {
+                self.header.exited = true;
+                self.header.exit_code = code;
+                self.header.state = RunState::Exited;
+                ch.header = true;
+                self.close_turn(&mut ch);
+                self.clear_asks(&mut ch, |_| true);
+                ch.now = true;
+            }
+            Event::Unknown => {}
+        }
+        ch
+    }
+
+    /// Records that the client answered a request, since harnesses only
+    /// report requests they withdraw themselves.
+    pub fn answered(&mut self, request_id: &str) -> Changes {
+        let mut ch = Changes::default();
+        self.clear_asks(&mut ch, |a| a.request_id == request_id);
+        ch
+    }
+
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn plan(&self) -> Option<&PlanView> {
+        self.plan.as_ref()
+    }
+
+    pub fn asks(&self) -> &[Ask] {
+        &self.asks
+    }
+
+    pub fn files(&self) -> &[FileEntry] {
+        &self.files
+    }
+
+    pub fn commands(&self) -> &[CommandEntry] {
+        &self.commands
+    }
+
+    pub fn subagents(&self) -> &[SubagentEntry] {
+        &self.subagents
+    }
+
+    pub fn turns(&self) -> &[Turn] {
+        &self.turns
+    }
+
+    pub fn notices(&self) -> &[String] {
+        &self.notices
+    }
+
+    pub fn items(&self) -> &[ItemView] {
+        &self.items
+    }
+
+    pub fn item(&self, id: &str) -> Option<&ItemView> {
+        self.item_index.get(id).map(|&i| &self.items[i])
+    }
+
+    /// What the agent and its subagents are doing right now, oldest first.
+    pub fn now(&self) -> Vec<Activity> {
+        self.items
+            .iter()
+            .filter(|i| i.status == ItemStatus::Running)
+            .filter_map(|i| self.activity(i))
+            .collect()
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            header: self.header.clone(),
+            now: self.now(),
+            plan: self.plan.clone(),
+            asks: self.asks.clone(),
+            files: self.files.clone(),
+            commands: self.commands.clone(),
+            subagents: self.subagents.clone(),
+            turns: self.turns.clone(),
+            notices: self.notices.clone(),
+            items: self.items.clone(),
+        }
+    }
+
+    // Items
+
+    fn item_started(
+        &mut self,
+        id: String,
+        kind: ItemKind,
+        parent: Option<String>,
+        detail: Detail,
+        started_at_ms: Option<u64>,
+        ch: &mut Changes,
+    ) {
+        if self.item_index.contains_key(&id) {
+            self.item_detail(&id, detail, None, None, ch);
+            return;
+        }
+        // A prompt in the main conversation starts a turn; anything else
+        // joins the open one, or its subagent's.
+        let turn = match parent.as_deref().and_then(|p| self.item(p)) {
+            Some(p) => p.turn,
+            None if parent.is_none() && kind == ItemKind::UserMessage => self.new_turn(ch),
+            None => self.open_turn(ch),
+        };
+        if parent.is_none() {
+            self.turns[turn].items.push(id.clone());
+            Changes::push(&mut ch.turns, turn);
+        }
+        if let Some(p) = parent.as_deref()
+            && let Some(&s) = self.subagent_index.get(p)
+        {
+            self.subagents[s].items += 1;
+            Changes::push(&mut ch.subagents, p.to_owned());
+        }
+        self.item_index.insert(id.clone(), self.items.len());
+        self.items.push(ItemView {
+            id: id.clone(),
+            kind,
+            parent,
+            turn,
+            status: ItemStatus::Running,
+            text: String::new(),
+            detail: Detail::Text,
+            output: String::new(),
+            started_at_ms,
+            completed_at_ms: None,
+        });
+        Changes::push(&mut ch.items, id.clone());
+        ch.now = true;
+        self.item_detail(&id, detail, None, None, ch);
+    }
+
+    fn item_delta(&mut self, id: &str, text: &str, ch: &mut Changes) {
+        let Some(&i) = self.item_index.get(id) else {
+            return;
+        };
+        let item = &mut self.items[i];
+        match item.detail {
+            Detail::Command { .. } => {
+                item.output.push_str(text);
+                let output = item.output.clone();
+                self.update_command_output(id, &output, ch);
+            }
+            Detail::Text => {
+                item.text.push_str(text);
+                Changes::push(&mut ch.items, id.to_owned());
+                let (kind, parent, turn) = (item.kind, item.parent.is_none(), item.turn);
+                if kind == ItemKind::UserMessage && parent {
+                    let t = &mut self.turns[turn];
+                    t.prompt.get_or_insert_with(String::new).push_str(text);
+                    Changes::push(&mut ch.turns, turn);
+                    if !self.titled && turn == 0 {
+                        self.header.title =
+                            first_line(t.prompt.as_deref().unwrap_or("")).map(|l| shorten(&l, TITLE_CHARS));
+                        ch.header = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A new detail, from a start, update or completion. `status` is set
+    /// on completion.
+    fn item_detail(
+        &mut self,
+        id: &str,
+        detail: Detail,
+        status: Option<ItemStatus>,
+        completed_at_ms: Option<u64>,
+        ch: &mut Changes,
+    ) {
+        let Some(&i) = self.item_index.get(id) else {
+            return;
+        };
+        // A completion without a detail keeps the one it had.
+        if detail != Detail::Text || self.items[i].detail == Detail::Text {
+            self.items[i].detail = detail;
+        }
+        if let Some(s) = status {
+            self.items[i].status = s;
+            self.items[i].completed_at_ms = completed_at_ms;
+            ch.now = true;
+        } else if self.items[i].status == ItemStatus::Running {
+            ch.now = true;
+        }
+        Changes::push(&mut ch.items, id.to_owned());
+        let item = self.items[i].clone();
+        match &item.detail {
+            Detail::Command { .. } => self.upsert_command(&item, ch),
+            Detail::Subagent { .. } => self.upsert_subagent(&item, ch),
+            Detail::FileChange { files, .. } if status == Some(ItemStatus::Completed) => {
+                for f in files {
+                    self.record_edit(&item, f, ch);
+                }
+                self.bump_parent(&item, |s| s.edits += 1, ch);
+            }
+            Detail::Tool {
+                kind: ToolKind::Read,
+                paths,
+                title,
+                ..
+            } if status == Some(ItemStatus::Completed) => {
+                let paths = if paths.is_empty() && title.starts_with('/') {
+                    std::slice::from_ref(title)
+                } else {
+                    paths.as_slice()
+                };
+                for p in paths {
+                    self.record_read(&item, p, ch);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Commands
+
+    fn upsert_command(&mut self, item: &ItemView, ch: &mut Changes) {
+        let Detail::Command {
+            command,
+            cwd,
+            output,
+            exit_code,
+            ..
+        } = &item.detail
+        else {
+            return;
+        };
+        if !self.root_fixed
+            && self.header.root.is_none()
+            && let Some(c) = cwd
+        {
+            self.header.root = Some(c.clone());
+            for f in &mut self.files {
+                f.display = display_path(Some(c), &f.path);
+            }
+            ch.header = true;
+        }
+        let output = if output.is_empty() { &item.output } else { output };
+        let (output_tail, output_lines) = tail(output);
+        let entry = CommandEntry {
+            item_id: item.id.clone(),
+            parent: item.parent.clone(),
+            turn: item.turn,
+            display: unwrap_shell(command),
+            command: command.clone(),
+            cwd: cwd.clone(),
+            status: item.status,
+            exit_code: *exit_code,
+            output_tail,
+            output_lines,
+            started_at_ms: item.started_at_ms,
+            completed_at_ms: item.completed_at_ms,
+        };
+        match self.command_index.get(&item.id) {
+            Some(&c) => self.commands[c] = entry,
+            None => {
+                self.command_index.insert(item.id.clone(), self.commands.len());
+                self.commands.push(entry);
+                self.bump_parent(item, |s| s.commands += 1, ch);
+            }
+        }
+        Changes::push(&mut ch.commands, item.id.clone());
+    }
+
+    fn update_command_output(&mut self, id: &str, output: &str, ch: &mut Changes) {
+        if let Some(&c) = self.command_index.get(id) {
+            let (t, n) = tail(output);
+            self.commands[c].output_tail = t;
+            self.commands[c].output_lines = n;
+            Changes::push(&mut ch.commands, id.to_owned());
+        }
+    }
+
+    // Subagents
+
+    fn upsert_subagent(&mut self, item: &ItemView, ch: &mut Changes) {
+        let Detail::Subagent {
+            agent,
+            description,
+            prompt,
+            status,
+            output,
+            model,
+            background,
+            ..
+        } = &item.detail
+        else {
+            return;
+        };
+        // Coordination calls (Codex's `wait`) name no agent; they show in
+        // Now, not as a run of their own.
+        if is_coordination(&item.detail) {
+            return;
+        }
+        let entry = SubagentEntry {
+            item_id: item.id.clone(),
+            parent: item.parent.clone(),
+            turn: item.turn,
+            agent: agent.clone(),
+            description: description.clone(),
+            prompt: prompt.clone(),
+            model: model.clone(),
+            status: item.status,
+            harness_status: status.clone(),
+            background: *background,
+            report: output.clone(),
+            items: 0,
+            commands: 0,
+            edits: 0,
+        };
+        match self.subagent_index.get(&item.id) {
+            Some(&s) => {
+                let old = &self.subagents[s];
+                self.subagents[s] = SubagentEntry {
+                    items: old.items,
+                    commands: old.commands,
+                    edits: old.edits,
+                    // A later update can drop what an earlier one said.
+                    background: old.background || entry.background,
+                    model: entry.model.clone().or_else(|| old.model.clone()),
+                    ..entry
+                };
+            }
+            None => {
+                self.subagent_index.insert(item.id.clone(), self.subagents.len());
+                self.subagents.push(entry);
+            }
+        }
+        Changes::push(&mut ch.subagents, item.id.clone());
+    }
+
+    fn bump_parent(&mut self, item: &ItemView, f: impl FnOnce(&mut SubagentEntry), ch: &mut Changes) {
+        if let Some(p) = &item.parent
+            && let Some(&s) = self.subagent_index.get(p)
+        {
+            f(&mut self.subagents[s]);
+            Changes::push(&mut ch.subagents, p.clone());
+        }
+    }
+
+    // Files
+
+    fn file_mut(&mut self, path: &str) -> &mut FileEntry {
+        let i = match self.file_index.get(path) {
+            Some(&i) => i,
+            None => {
+                self.file_index.insert(path.to_owned(), self.files.len());
+                self.files.push(FileEntry {
+                    path: path.to_owned(),
+                    display: display_path(self.header.root.as_deref(), path),
+                    old_path: None,
+                    change: None,
+                    added: 0,
+                    removed: 0,
+                    reads: 0,
+                    edits: Vec::new(),
+                    turns: Vec::new(),
+                });
+                self.files.len() - 1
+            }
+        };
+        &mut self.files[i]
+    }
+
+    fn record_edit(&mut self, item: &ItemView, diff: &event::FileDiff, ch: &mut Changes) {
+        if diff.path.is_empty() || self.edit_recorded(&item.id, &diff.path) {
+            return;
+        }
+        let f = self.file_mut(&diff.path);
+        f.change = Some(match (f.change, diff.kind) {
+            // Created this session and edited since: still new.
+            (Some(FileChangeKind::Add), FileChangeKind::Update) => FileChangeKind::Add,
+            (_, k) => k,
+        });
+        if diff.old_path.is_some() {
+            f.old_path.clone_from(&diff.old_path);
+        }
+        f.added += diff.added;
+        f.removed += diff.removed;
+        f.edits.push(FileEdit {
+            item_id: item.id.clone(),
+            turn: item.turn,
+            kind: diff.kind,
+            added: diff.added,
+            removed: diff.removed,
+            hunks: diff.hunks.clone(),
+        });
+        Changes::push(&mut f.turns, item.turn);
+        Changes::push(&mut ch.files, diff.path.clone());
+    }
+
+    fn edit_recorded(&self, item_id: &str, path: &str) -> bool {
+        self.file_index
+            .get(path)
+            .is_some_and(|&i| self.files[i].edits.iter().any(|e| e.item_id == item_id))
+    }
+
+    fn record_read(&mut self, item: &ItemView, path: &str, ch: &mut Changes) {
+        let f = self.file_mut(path);
+        f.reads += 1;
+        Changes::push(&mut f.turns, item.turn);
+        Changes::push(&mut ch.files, path.to_owned());
+    }
+
+    // Asks
+
+    fn clear_asks(&mut self, ch: &mut Changes, done: impl Fn(&Ask) -> bool) {
+        let before = self.asks.len();
+        self.asks.retain(|a| !done(a));
+        if self.asks.len() != before {
+            ch.asks = true;
+        }
+    }
+
+    // Turns
+
+    fn current_turn(&self) -> usize {
+        self.turns.len().saturating_sub(1)
+    }
+
+    /// The open turn, starting one if there is none (a turn the harness
+    /// started itself, or a session attached mid-turn).
+    fn open_turn(&mut self, ch: &mut Changes) -> usize {
+        match self.turns.last() {
+            Some(t) if t.open => t.index,
+            _ => self.new_turn(ch),
+        }
+    }
+
+    fn new_turn(&mut self, ch: &mut Changes) -> usize {
+        self.close_turn(ch);
+        let index = self.turns.len();
+        self.turns.push(Turn {
+            index,
+            prompt: None,
+            items: Vec::new(),
+            open: true,
+            diff: None,
+        });
+        self.header.turns = self.turns.len();
+        ch.header = true;
+        Changes::push(&mut ch.turns, index);
+        index
+    }
+
+    fn close_turn(&mut self, ch: &mut Changes) {
+        if let Some(t) = self.turns.last_mut()
+            && t.open
+        {
+            t.open = false;
+            Changes::push(&mut ch.turns, t.index);
+        }
+    }
+
+    // Now
+
+    fn activity(&self, item: &ItemView) -> Option<Activity> {
+        let root = self.header.root.as_deref();
+        let (kind, target) = match (&item.detail, item.kind) {
+            (_, ItemKind::UserMessage) => return None,
+            (Detail::Text, ItemKind::Reasoning) => (ActivityKind::Thinking, String::new()),
+            (Detail::Text, _) => (ActivityKind::Writing, String::new()),
+            (Detail::Command { command, .. }, _) => (
+                ActivityKind::Running,
+                first_line(&unwrap_shell(command)).unwrap_or_default(),
+            ),
+            (Detail::FileChange { files, .. }, _) => (
+                ActivityKind::Editing,
+                files
+                    .iter()
+                    .map(|f| display_path(root, &f.path))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+            (
+                d @ Detail::Subagent {
+                    agent, description, ..
+                },
+                _,
+            ) => {
+                if is_coordination(d) {
+                    (ActivityKind::WaitingForSubagents, String::new())
+                } else {
+                    let who = agent.as_deref().map(|a| format!("{a}: ")).unwrap_or_default();
+                    (ActivityKind::Delegating, format!("{who}{description}"))
+                }
+            }
+            (
+                Detail::Tool {
+                    tool,
+                    kind,
+                    title,
+                    paths,
+                    ..
+                },
+                _,
+            ) => {
+                let target = match paths.first() {
+                    Some(p) if title.is_empty() || title == p => display_path(root, p),
+                    _ if title.starts_with('/') => display_path(root, title),
+                    _ => first_line(title).unwrap_or_default(),
+                };
+                (tool_activity(tool, *kind), target)
+            }
+            (Detail::Unknown, _) => (ActivityKind::Working, String::new()),
+        };
+        Some(Activity {
+            item_id: item.id.clone(),
+            parent: item.parent.clone(),
+            kind,
+            target,
+            since_ms: item.started_at_ms,
+        })
+    }
+}
+
+fn tool_activity(tool: &str, kind: ToolKind) -> ActivityKind {
+    match kind {
+        ToolKind::Read => return ActivityKind::Reading,
+        ToolKind::Edit => return ActivityKind::Editing,
+        ToolKind::Fetch => return ActivityKind::Fetching,
+        ToolKind::Shell => return ActivityKind::Running,
+        ToolKind::Mcp => return ActivityKind::CallingTool,
+        ToolKind::Other => {}
+    }
+    let t = tool.to_ascii_lowercase();
+    if t.contains("todo") || t.contains("plan") {
+        ActivityKind::Planning
+    } else if t == "toolsearch" {
+        ActivityKind::Working
+    } else if t.contains("grep") || t.contains("glob") || t.contains("search") || t == "ls" {
+        ActivityKind::Searching
+    } else if t.contains("fetch") {
+        ActivityKind::Fetching
+    } else {
+        ActivityKind::Working
+    }
+}
+
+/// A subagent-shaped call that names no agent, child or task: waiting on
+/// or messaging agents already running.
+fn is_coordination(detail: &Detail) -> bool {
+    matches!(
+        detail,
+        Detail::Subagent {
+            agent: None,
+            child: None,
+            prompt: None,
+            ..
+        }
+    )
+}
+
+fn display_path(root: Option<&str>, path: &str) -> String {
+    root.map(|r| r.trim_end_matches('/'))
+        .filter(|r| !r.is_empty())
+        .and_then(|r| path.strip_prefix(r))
+        .and_then(|rest| rest.strip_prefix('/'))
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(path)
+        .to_owned()
+}
+
+fn first_line(s: &str) -> Option<String> {
+    s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(str::to_owned)
+}
+
+/// `s` cut at a word boundary to at most `max` characters, with an ellipsis.
+fn shorten(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_owned();
+    }
+    let cut: String = s.chars().take(max).collect();
+    let cut = match cut.rfind(char::is_whitespace) {
+        Some(i) if i > max / 2 => &cut[..i],
+        _ => cut.as_str(),
+    };
+    format!(
+        "{}…",
+        cut.trim_end_matches(|c: char| c.is_whitespace() || c == ',' || c == '.')
+    )
+}
+
+fn non_empty(s: String) -> Option<String> {
+    (!s.is_empty()).then_some(s)
+}
+
+/// The last [`OUTPUT_TAIL_LINES`] lines of `output`, and its line count.
+fn tail(output: &str) -> (String, usize) {
+    let lines: Vec<&str> = output.lines().collect();
+    let start = lines.len().saturating_sub(OUTPUT_TAIL_LINES);
+    (lines[start..].join("\n"), lines.len())
+}

@@ -12,12 +12,45 @@ nothing.
 
 | Crate | What it does | Costs the agent context? |
 |---|---|---|
-| `crates/acc-ui` | The render model (`acc-ui/1` components), validation and flattening, component fences, optional formatting conventions. The session model (ACC events in, regions out) is next. | No |
+| `crates/acc-ui` | The render model (`acc-ui/1` components), validation and flattening, component fences, optional formatting conventions. The session model: ACC events in, regions out. | No |
 | `crates/acc-ui-agent` | Opt-in: agents writing components themselves through the `acc_ui` MCP server or a spec skill | Yes, when enabled |
 | `crates/acc-ui-ffi` | UniFFI bindings for Swift and Kotlin, covering both | No |
 
 Renderers (the `AccUI` Swift package first) take the normalised render model and send
 actions out through a delegate. Clients such as Sessh wire it up.
+
+## The session model
+
+`SessionView` folds a session's ACC events into the regions a session screen shows,
+instead of a top-to-bottom transcript
+([`crates/acc-ui/src/session`](crates/acc-ui/src/session/mod.rs)):
+
+| Region | What it holds |
+|---|---|
+| `header()` | harness, model, title, run state, latest usage and quota, root, turn count |
+| `now()` | what the agent and its subagents are doing this second (`Running cargo test`, `Editing src/a.rs`) |
+| `plan()` | the to-do list with completed/total and the current entry |
+| `asks()` | approvals and questions waiting on the user |
+| `files()` | every file read or changed: net change, +/-, each edit's hunks, the turns that touched it |
+| `commands()` | each command unwrapped from its `zsh -lc '...'`, with status, exit code and an output tail |
+| `subagents()` | each run of another agent: task, status, report, and how much it did |
+| `turns()` | each prompt and the items it led to, with the turn's diff where the harness sends one |
+
+```rust
+let mut view = SessionView::new();
+view.set_root("/home/me/project");          // the client knows the session's cwd
+for line in events { let changes = view.apply_json(line)?; /* redraw what changed */ }
+view.answered(request_id);                  // after answering an ask
+```
+
+`apply_json` takes ACC's event JSON (a line of `acc run --json`) and returns the
+`Changes` it made. acc-ui reads ACC's events with its own tolerant types, so unknown
+events and fields are ignored rather than failing.
+
+The recorded sessions in `crates/acc-ui/tests/sessions` (Claude Code and Codex fixing
+a bug, then delegating a review to a subagent) replay into golden
+`<name>.session.json` files. Record new ones with `scripts/record-fixture.py` against
+a built `acc`.
 
 ## The render model
 
@@ -98,7 +131,8 @@ cargo run -p acc-ui-agent --example dump -- conventions|conventions-skill|schema
 ```
 
 The golden specs are in `crates/acc-ui/tests/specs`: `<name>.json` normalises to
-`<name>.out.json`.
+`<name>.out.json`. Recorded sessions are in `crates/acc-ui/tests/sessions`:
+`<name>.ndjson` replays into `<name>.session.json`.
 
 Bindings:
 
