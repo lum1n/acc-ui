@@ -86,7 +86,7 @@ cost:
   `parse_submit` handle answers sent as a user message:
   `<acc-ui-submit id="deploy">{"choice":"rollback"}</acc-ui-submit>`.
 
-The full tool schema is about 12.8 KB and is sent with both tools.
+Each tool carries the full spec schema, about 13 KB per tool (26 KB for both).
 
 ## Development
 
