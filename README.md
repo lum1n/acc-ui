@@ -55,6 +55,19 @@ a bug, then delegating a review to a subagent) replay into golden
 `<name>.session.json` files. Record new ones with `scripts/record-fixture.py` against
 a built `acc`.
 
+### Replay
+
+```sh
+cargo run -p acc-ui --example replay -- crates/acc-ui/tests/sessions/claude-fix-and-review.ndjson \
+    --root /work --html /tmp/replay.html
+```
+
+Plays a recorded session back through `SessionView` in a throwaway web viewer. Each frame
+carries only the regions its event changed. Space plays and pauses, the arrow keys step,
+and `?frame=N` or `?frame=end` opens at a frame. Without `--html`, the frames go to stdout
+as NDJSON. The viewer is for judging the session layout on real sessions before the
+native renderers; it is not a product.
+
 ## The render model
 
 The components are defined in [`crates/acc-ui/src/spec.rs`](crates/acc-ui/src/spec.rs):
