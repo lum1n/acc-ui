@@ -1,0 +1,17 @@
+[package]
+name = "acc-ui-agent"
+description = "Opt-in: agents writing acc-ui specs themselves, through the acc_ui MCP server or acc-ui fences"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+acc-ui.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true
+

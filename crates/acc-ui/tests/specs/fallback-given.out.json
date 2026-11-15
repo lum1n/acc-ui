@@ -1,0 +1,16 @@
+{
+  "spec": {
+    "v": "acc-ui/1",
+    "id": "fb",
+    "fallback": "Deploy finished.",
+    "interactive": false,
+    "root": 0,
+    "nodes": [
+      {
+        "type": "badge",
+        "text": "done"
+      }
+    ]
+  },
+  "errors": []
+}

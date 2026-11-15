@@ -1,0 +1,1 @@
+{ "v": "acc-ui/1", "id": "fb", "fallback": "Deploy finished.", "root": { "type": "badge", "text": "done" } }

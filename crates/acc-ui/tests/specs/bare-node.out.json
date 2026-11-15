@@ -1,0 +1,17 @@
+{
+  "spec": {
+    "v": "acc-ui/1",
+    "id": "u-37f576015f91",
+    "fallback": "[just a node]",
+    "interactive": false,
+    "root": 0,
+    "nodes": [
+      {
+        "type": "badge",
+        "text": "just a node",
+        "tone": "success"
+      }
+    ]
+  },
+  "errors": []
+}

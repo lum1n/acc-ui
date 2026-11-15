@@ -1,0 +1,4 @@
+# Settings for the generated bindings.
+[bindings.kotlin]
+package_name = "io.github.lum1n.accui"
+cdylib_name = "acc_ui_ffi"

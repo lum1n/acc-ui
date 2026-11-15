@@ -1,0 +1,33 @@
+[package]
+name = "acc-ui-ffi"
+description = "UniFFI bindings (Swift, Kotlin) for acc-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+# `staticlib` for apps that link it alone; apps with their own Rust static
+# library (Sessh) depend on the crate instead, so std is linked once.
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "acc_ui_ffi"
+
+[[bin]]
+# Generates Swift/Kotlin sources: `cargo run -p acc-ui-ffi --features bindgen --bin uniffi-bindgen -- generate ...`
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+acc-ui.workspace = true
+acc-ui-agent.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uniffi.workspace = true
+
+[lints]
+workspace = true

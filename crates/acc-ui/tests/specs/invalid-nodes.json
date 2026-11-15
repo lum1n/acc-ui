@@ -1,0 +1,32 @@
+{
+  "v": "acc-ui/1",
+  "id": "has spaces/and slashes",
+  "root": {
+    "type": "card",
+    "title": "Partly broken",
+    "action": { "type": "open_url", "url": "javascript:alert(1)" },
+    "children": [
+      { "type": "gauge", "value": 3 },
+      { "text": "no type" },
+      "a string",
+      { "type": "badge" },
+      { "type": "image", "src": "file:///etc/passwd" },
+      { "type": "image", "src": "http://insecure.example/a.png" },
+      { "type": "button", "label": "Go", "action": { "type": "open_url", "url": "ftp://x" } },
+      { "type": "button", "label": " ", "action": { "type": "prompt", "text": "x" } },
+      { "type": "chips", "options": [{ "label": "ok", "action": { "type": "prompt", "text": "ok" } }, { "label": "bad", "action": { "type": "open_url", "url": "file:///x" } }] },
+      { "type": "form", "fields": [{ "name": "a", "kind": "text" }, { "name": "a", "kind": "text" }] },
+      { "type": "form", "fields": [{ "name": "bad name", "kind": "text" }] },
+      { "type": "form", "fields": [{ "name": "s", "kind": "select" }] },
+      { "type": "form", "fields": [{ "name": "s", "kind": "slider", "min": 0 }] },
+      { "type": "form", "fields": [] },
+      { "type": "chart", "kind": "line", "series": [] },
+      { "type": "chart", "kind": "pie", "series": [{ "points": [{ "x": "a", "y": 1 }] }, { "points": [{ "x": "b", "y": 2 }] }] },
+      { "type": "mermaid", "code": "  " },
+      { "type": "table", "columns": [], "rows": [] },
+      { "type": "badge", "text": "kept", "children": [{ "type": "badge", "text": "ignored" }] },
+      { "type": "stack", "children": "not an array" },
+      { "type": "markdown", "text": "still here" }
+    ]
+  }
+}

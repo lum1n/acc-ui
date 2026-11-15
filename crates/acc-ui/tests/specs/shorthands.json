@@ -1,0 +1,25 @@
+{
+  "root": {
+    "type": "vstack",
+    "children": [
+      { "type": "text", "content": "Hi" },
+      { "type": "kv", "items": { "Version": "2.4.1", "Replicas": 3, "Healthy": true } },
+      { "type": "table", "columns": ["Name", "Count"], "rows": [["a", 1], ["b", null, "extra"], ["c"]] },
+      { "type": "table", "columns": [{ "key": "name", "label": "Name" }, { "key": "n" }], "rows": [{ "name": "x", "n": 2.5 }] },
+      { "type": "chart", "kind": "line", "labels": ["Mon", "Tue", "Wed"], "series": [{ "label": "load", "values": [1, "2", 3] }] },
+      { "type": "chart", "kind": "point", "data": [[1, 2], [3, 4]] },
+      { "type": "checklist", "items": ["Build", { "label": "Ship", "done": true }, { "text": "Tag", "checked": false }] },
+      { "type": "progress", "value": 45 },
+      { "type": "progress", "value": 3, "max": 2 },
+      { "type": "chips", "options": ["Yes", "No", { "label": "Later" }] },
+      { "type": "button", "label": "Go", "action": "Go ahead" },
+      { "type": "diagram", "source": "graph TD; A-->B" },
+      { "type": "badge", "label": "new" },
+      { "type": "img", "url": "data:image/png;base64,iVBORw0KGgo=" },
+      { "type": "alert", "markdown": "careful" },
+      { "type": "form", "fields": [
+        { "id": "color", "type": "select", "options": ["red", "green", 3, { "value": "blue" }] }
+      ] }
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "v": "acc-ui/1",
+  "id": "all-components",
+  "title": "Every component",
+  "root": {
+    "type": "stack",
+    "gap": "medium",
+    "children": [
+      {
+        "type": "card",
+        "title": "api-server",
+        "subtitle": "Deploy 2.4.1",
+        "icon": "🚀",
+        "tone": "info",
+        "action": { "type": "open_url", "url": "https://example.com/deploys/42" },
+        "children": [
+          { "type": "kv", "items": [{ "label": "Region", "value": "eu-north-1" }, { "label": "Health", "value": "ok", "tone": "success" }] },
+          { "type": "row", "wrap": true, "children": [
+            { "type": "badge", "text": "canary", "tone": "warning" },
+            { "type": "badge", "text": "v2.4.1" }
+          ] },
+          { "type": "progress", "value": 0.6, "label": "Rolling out", "tone": "accent" }
+        ]
+      },
+      {
+        "type": "table",
+        "columns": [{ "label": "Service" }, { "label": "p95 ms", "align": "end" }],
+        "rows": [["api", "120"], ["web", "80"]]
+      },
+      { "type": "checklist", "items": [
+        { "text": "Build", "state": "done" },
+        { "text": "Migrate", "state": "doing", "detail": "3 of 7" },
+        { "text": "Smoke test", "state": "todo" },
+        { "text": "Lint", "state": "failed" },
+        { "text": "Docs", "state": "skipped" }
+      ] },
+      { "type": "callout", "tone": "warning", "title": "Heads up", "text": "The **canary** takes 10 minutes." },
+      { "type": "file", "path": "/srv/app/src/main.rs", "line": 42, "label": "entry point" },
+      { "type": "pr", "title": "Speed up the cache", "number": 128, "repo": "lum1n/acc", "state": "open", "url": "https://github.com/lum1n/acc/pull/128" },
+      { "type": "commit", "sha": "3f2a9c1d7e", "title": "Fix the flaky test", "author": "vegard" },
+      { "type": "chart", "kind": "bar", "title": "Requests", "x_label": "day", "y_label": "k", "stacked": true, "series": [
+        { "name": "GET", "points": [{ "x": "Mon", "y": 12 }, { "x": "Tue", "y": 15.5 }] },
+        { "name": "POST", "points": [{ "x": "Mon", "y": 3 }, { "x": "Tue", "y": 4 }] }
+      ] },
+      { "type": "chart", "kind": "pie", "series": [{ "points": [{ "x": "ok", "y": 90 }, { "x": "error", "y": 10 }] }] },
+      { "type": "mermaid", "code": "flowchart LR\n  A --> B" },
+      { "type": "image", "src": "https://example.com/a.png", "alt": "Screenshot", "caption": "After" },
+      { "type": "image", "src": "/tmp/shot.png" },
+      { "type": "markdown", "text": "Done. See `main.rs`." },
+      { "type": "html", "html": "<b>hi</b>", "height": 120 },
+      { "type": "button", "label": "Roll back", "style": "destructive", "action": { "type": "submit", "values": { "choice": "rollback" } } },
+      { "type": "button", "label": "Copy SHA", "action": { "type": "copy", "text": "3f2a9c1d7e" } },
+      { "type": "button", "label": "Open main.rs", "action": { "type": "open_file", "path": "src/main.rs", "line": 3 } },
+      { "type": "chips", "options": [{ "label": "Run tests", "action": { "type": "prompt", "text": "Run the tests" } }] },
+      { "type": "form", "submit_label": "Deploy", "fields": [
+        { "name": "env", "kind": "select", "label": "Environment", "options": [{ "label": "Production", "value": "prod" }, { "label": "Staging", "value": "staging" }], "default": "staging", "required": true },
+        { "name": "note", "kind": "textarea", "placeholder": "Why?" },
+        { "name": "replicas", "kind": "number", "min": 1, "max": 10, "default": 3 },
+        { "name": "dry_run", "kind": "toggle", "default": true },
+        { "name": "when", "kind": "date" },
+        { "name": "traffic", "kind": "slider", "min": 0, "max": 100, "step": 5, "help": "Percent" },
+        { "name": "title", "kind": "text" }
+      ] }
+    ]
+  }
+}

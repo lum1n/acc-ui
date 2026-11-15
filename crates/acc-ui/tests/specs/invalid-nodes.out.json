@@ -1,0 +1,84 @@
+{
+  "spec": {
+    "v": "acc-ui/1",
+    "id": "has-spaces-and-slashes",
+    "fallback": "Partly broken\n[ok]\n[chart]\n[kept]\nstill here",
+    "interactive": true,
+    "root": 0,
+    "nodes": [
+      {
+        "type": "card",
+        "title": "Partly broken",
+        "children": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "type": "chips",
+        "options": [
+          {
+            "label": "ok",
+            "action": {
+              "type": "prompt",
+              "text": "ok"
+            }
+          }
+        ]
+      },
+      {
+        "type": "chart",
+        "kind": "pie",
+        "series": [
+          {
+            "points": [
+              {
+                "x": "a",
+                "y": 1.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "badge",
+        "text": "kept"
+      },
+      {
+        "type": "stack",
+        "children": []
+      },
+      {
+        "type": "markdown",
+        "text": "still here"
+      }
+    ]
+  },
+  "errors": [
+    "/root/action: \"javascript:alert(1)\" is not an http(s) URL; dropped",
+    "/root/children/0: unknown type \"gauge\"; expected one of stack, row, card, kv, table, badge, progress, checklist, callout, file, pr, commit, chart, mermaid, image, markdown, html, button, chips, form",
+    "/root/children/1: missing \"type\"",
+    "/root/children/2: a node must be an object",
+    "/root/children/3: missing field `text`",
+    "/root/children/4: image src \"file:///etc/passwd\" must be https:, data:image/ or an absolute host path",
+    "/root/children/5: image src \"http://insecure.example/a.png\" must be https:, data:image/ or an absolute host path",
+    "/root/children/6: \"ftp://x\" is not an http(s) URL",
+    "/root/children/7: a button needs a label",
+    "/root/children/8/options/1/action: \"file:///x\" is not an http(s) URL; dropped",
+    "/root/children/9: fields/1/name: \"a\" is used twice",
+    "/root/children/10: fields/0/name: \"bad name\" is not 1-64 of A-Z a-z 0-9 _ -",
+    "/root/children/11: fields/0: a select needs options",
+    "/root/children/12: fields/0: a slider needs min and max",
+    "/root/children/13: a form needs fields",
+    "/root/children/14: a chart needs at least one series with points",
+    "/root/children/15/series: a pie uses only the first series",
+    "/root/children/16: empty diagram",
+    "/root/children/17: a table needs columns",
+    "/root/children/18/children: a badge has no children; ignored",
+    "/root/children/19/children: must be an array",
+    "/id: \"has spaces/and slashes\" is not 1-64 of A-Z a-z 0-9 . _ -"
+  ]
+}

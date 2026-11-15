@@ -1,0 +1,6 @@
+{
+  "spec": null,
+  "errors": [
+    "not valid JSON: EOF while parsing a value at line 2 column 0"
+  ]
+}

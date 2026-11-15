@@ -1,0 +1,241 @@
+{
+  "spec": {
+    "v": "acc-ui/1",
+    "id": "u-23a32a61ec38",
+    "fallback": "Hi\nVersion: 2.4.1\nReplicas: 3\nHealthy: true\nName | Count\na | 1\nb | \nc | \nName | n\nx | 2.5\n[chart]\n[chart]\n[ ] Build\n[x] Ship\n[ ] Tag\nProgress 45%\nProgress 100%\n[Yes] [No] [Later]\n[Go]\n[diagram]\n[new]\n[image: data:image/png;base64,iVBORw0KGgo=]\ncareful\ncolor: ____",
+    "interactive": true,
+    "root": 0,
+    "nodes": [
+      {
+        "type": "stack",
+        "children": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ]
+      },
+      {
+        "type": "markdown",
+        "text": "Hi"
+      },
+      {
+        "type": "kv",
+        "items": [
+          {
+            "label": "Version",
+            "value": "2.4.1"
+          },
+          {
+            "label": "Replicas",
+            "value": "3"
+          },
+          {
+            "label": "Healthy",
+            "value": "true"
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "label": "Name"
+          },
+          {
+            "label": "Count"
+          }
+        ],
+        "rows": [
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            ""
+          ],
+          [
+            "c",
+            ""
+          ]
+        ]
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "label": "Name"
+          },
+          {
+            "label": "n"
+          }
+        ],
+        "rows": [
+          [
+            "x",
+            "2.5"
+          ]
+        ]
+      },
+      {
+        "type": "chart",
+        "kind": "line",
+        "series": [
+          {
+            "name": "load",
+            "points": [
+              {
+                "x": "Mon",
+                "y": 1.0
+              },
+              {
+                "x": "Tue",
+                "y": 2.0
+              },
+              {
+                "x": "Wed",
+                "y": 3.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "chart",
+        "kind": "point",
+        "series": [
+          {
+            "points": [
+              {
+                "x": 1.0,
+                "y": 2.0
+              },
+              {
+                "x": 3.0,
+                "y": 4.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "checklist",
+        "items": [
+          {
+            "text": "Build",
+            "state": "todo"
+          },
+          {
+            "text": "Ship",
+            "state": "done"
+          },
+          {
+            "text": "Tag",
+            "state": "todo"
+          }
+        ]
+      },
+      {
+        "type": "progress",
+        "value": 45.0,
+        "max": 100.0
+      },
+      {
+        "type": "progress",
+        "value": 2.0,
+        "max": 2.0
+      },
+      {
+        "type": "chips",
+        "options": [
+          {
+            "label": "Yes",
+            "action": {
+              "type": "prompt",
+              "text": "Yes"
+            }
+          },
+          {
+            "label": "No",
+            "action": {
+              "type": "prompt",
+              "text": "No"
+            }
+          },
+          {
+            "label": "Later",
+            "action": {
+              "type": "prompt",
+              "text": "Later"
+            }
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "label": "Go",
+        "action": {
+          "type": "prompt",
+          "text": "Go ahead"
+        }
+      },
+      {
+        "type": "mermaid",
+        "code": "graph TD; A-->B"
+      },
+      {
+        "type": "badge",
+        "text": "new"
+      },
+      {
+        "type": "image",
+        "src": "data:image/png;base64,iVBORw0KGgo="
+      },
+      {
+        "type": "callout",
+        "text": "careful"
+      },
+      {
+        "type": "form",
+        "fields": [
+          {
+            "name": "color",
+            "kind": "select",
+            "options": [
+              {
+                "label": "red",
+                "value": "red"
+              },
+              {
+                "label": "green",
+                "value": "green"
+              },
+              {
+                "label": "3",
+                "value": "3"
+              },
+              {
+                "label": "blue",
+                "value": "blue"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "errors": []
+}

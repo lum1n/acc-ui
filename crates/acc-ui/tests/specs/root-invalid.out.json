@@ -1,0 +1,7 @@
+{
+  "spec": null,
+  "errors": [
+    "/root: unknown type \"nope\"; expected one of stack, row, card, kv, table, badge, progress, checklist, callout, file, pr, commit, chart, mermaid, image, markdown, html, button, chips, form",
+    "/root: no renderable node left"
+  ]
+}

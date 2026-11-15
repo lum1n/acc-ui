@@ -1,0 +1,339 @@
+{
+  "spec": {
+    "v": "acc-ui/1",
+    "id": "all-components",
+    "title": "Every component",
+    "fallback": "Every component\n🚀 api-server: Deploy 2.4.1\n  Region: eu-north-1\n  Health: ok\n    [canary]\n    [v2.4.1]\n  Rolling out 60%\nService | p95 ms\napi | 120\nweb | 80\n[x] Build\n[~] Migrate\n[ ] Smoke test\n[!] Lint\n[-] Docs\nHeads up: The **canary** takes 10 minutes.\n/srv/app/src/main.rs:42\nPR #128 Speed up the cache https://github.com/lum1n/acc/pull/128\n3f2a9c1d Fix the flaky test\n[chart: Requests]\n[chart]\n[diagram]\n[image: Screenshot]\n[image: /tmp/shot.png]\nDone. See `main.rs`.\n[HTML]\n[Roll back]\n[Copy SHA]\n[Open main.rs]\n[Run tests]\nEnvironment: ____\nnote: ____\nreplicas: ____\ndry_run: ____\nwhen: ____\ntraffic: ____\ntitle: ____",
+    "interactive": true,
+    "root": 0,
+    "nodes": [
+      {
+        "type": "stack",
+        "children": [
+          1,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "gap": "medium"
+      },
+      {
+        "type": "card",
+        "title": "api-server",
+        "subtitle": "Deploy 2.4.1",
+        "icon": "🚀",
+        "tone": "info",
+        "children": [
+          2,
+          3,
+          6
+        ],
+        "action": {
+          "type": "open_url",
+          "url": "https://example.com/deploys/42"
+        }
+      },
+      {
+        "type": "kv",
+        "items": [
+          {
+            "label": "Region",
+            "value": "eu-north-1"
+          },
+          {
+            "label": "Health",
+            "value": "ok",
+            "tone": "success"
+          }
+        ]
+      },
+      {
+        "type": "row",
+        "children": [
+          4,
+          5
+        ],
+        "wrap": true
+      },
+      {
+        "type": "badge",
+        "text": "canary",
+        "tone": "warning"
+      },
+      {
+        "type": "badge",
+        "text": "v2.4.1"
+      },
+      {
+        "type": "progress",
+        "value": 0.6,
+        "max": 1.0,
+        "label": "Rolling out",
+        "tone": "accent"
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "label": "Service"
+          },
+          {
+            "label": "p95 ms",
+            "align": "end"
+          }
+        ],
+        "rows": [
+          [
+            "api",
+            "120"
+          ],
+          [
+            "web",
+            "80"
+          ]
+        ]
+      },
+      {
+        "type": "checklist",
+        "items": [
+          {
+            "text": "Build",
+            "state": "done"
+          },
+          {
+            "text": "Migrate",
+            "state": "doing",
+            "detail": "3 of 7"
+          },
+          {
+            "text": "Smoke test",
+            "state": "todo"
+          },
+          {
+            "text": "Lint",
+            "state": "failed"
+          },
+          {
+            "text": "Docs",
+            "state": "skipped"
+          }
+        ]
+      },
+      {
+        "type": "callout",
+        "text": "The **canary** takes 10 minutes.",
+        "title": "Heads up",
+        "tone": "warning"
+      },
+      {
+        "type": "file",
+        "path": "/srv/app/src/main.rs",
+        "line": 42,
+        "label": "entry point"
+      },
+      {
+        "type": "pr",
+        "title": "Speed up the cache",
+        "number": 128,
+        "url": "https://github.com/lum1n/acc/pull/128",
+        "repo": "lum1n/acc",
+        "state": "open"
+      },
+      {
+        "type": "commit",
+        "sha": "3f2a9c1d7e",
+        "title": "Fix the flaky test",
+        "author": "vegard"
+      },
+      {
+        "type": "chart",
+        "kind": "bar",
+        "series": [
+          {
+            "name": "GET",
+            "points": [
+              {
+                "x": "Mon",
+                "y": 12.0
+              },
+              {
+                "x": "Tue",
+                "y": 15.5
+              }
+            ]
+          },
+          {
+            "name": "POST",
+            "points": [
+              {
+                "x": "Mon",
+                "y": 3.0
+              },
+              {
+                "x": "Tue",
+                "y": 4.0
+              }
+            ]
+          }
+        ],
+        "title": "Requests",
+        "x_label": "day",
+        "y_label": "k",
+        "stacked": true
+      },
+      {
+        "type": "chart",
+        "kind": "pie",
+        "series": [
+          {
+            "points": [
+              {
+                "x": "ok",
+                "y": 90.0
+              },
+              {
+                "x": "error",
+                "y": 10.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "mermaid",
+        "code": "flowchart LR\n  A --> B"
+      },
+      {
+        "type": "image",
+        "src": "https://example.com/a.png",
+        "alt": "Screenshot",
+        "caption": "After"
+      },
+      {
+        "type": "image",
+        "src": "/tmp/shot.png"
+      },
+      {
+        "type": "markdown",
+        "text": "Done. See `main.rs`."
+      },
+      {
+        "type": "html",
+        "html": "<b>hi</b>",
+        "height": 120
+      },
+      {
+        "type": "button",
+        "label": "Roll back",
+        "action": {
+          "type": "submit",
+          "values": {
+            "choice": "rollback"
+          }
+        },
+        "style": "destructive"
+      },
+      {
+        "type": "button",
+        "label": "Copy SHA",
+        "action": {
+          "type": "copy",
+          "text": "3f2a9c1d7e"
+        }
+      },
+      {
+        "type": "button",
+        "label": "Open main.rs",
+        "action": {
+          "type": "open_file",
+          "path": "src/main.rs",
+          "line": 3
+        }
+      },
+      {
+        "type": "chips",
+        "options": [
+          {
+            "label": "Run tests",
+            "action": {
+              "type": "prompt",
+              "text": "Run the tests"
+            }
+          }
+        ]
+      },
+      {
+        "type": "form",
+        "fields": [
+          {
+            "name": "env",
+            "kind": "select",
+            "label": "Environment",
+            "default": "staging",
+            "required": true,
+            "options": [
+              {
+                "label": "Production",
+                "value": "prod"
+              },
+              {
+                "label": "Staging",
+                "value": "staging"
+              }
+            ]
+          },
+          {
+            "name": "note",
+            "kind": "textarea",
+            "placeholder": "Why?"
+          },
+          {
+            "name": "replicas",
+            "kind": "number",
+            "default": 3,
+            "min": 1.0,
+            "max": 10.0
+          },
+          {
+            "name": "dry_run",
+            "kind": "toggle",
+            "default": true
+          },
+          {
+            "name": "when",
+            "kind": "date"
+          },
+          {
+            "name": "traffic",
+            "kind": "slider",
+            "help": "Percent",
+            "min": 0.0,
+            "max": 100.0,
+            "step": 5.0
+          },
+          {
+            "name": "title",
+            "kind": "text"
+          }
+        ],
+        "submit_label": "Deploy"
+      }
+    ]
+  },
+  "errors": []
+}
