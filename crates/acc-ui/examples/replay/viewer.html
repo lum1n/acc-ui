@@ -450,7 +450,7 @@ function filesPanel() {
     const kind = f.change || "read";
     const g = { add: "A", update: "M", delete: "D", rename: "R", read: "R" }[kind];
     const key = "file:" + f.path;
-    return `<div class="row${isNew("files", f.path)}" onclick="toggle('${esc(key)}')">
+    return `<div class="row${isNew("files", f.path)}" data-key="${esc(key)}" onclick="toggle(this.dataset.key)">
       <span class="glyph ${kind}" title="${kind}">${kind === "read" ? "◎" : g}</span>
       <span class="path" title="${esc(f.path)}"><span>${esc(f.display)}</span></span>
       <span class="stat">${f.change ? `<span class="add">+${f.added}</span><span class="rem">−${f.removed}</span>${bars(f.added, f.removed)}` : `<span class="dim">${plural(f.reads, "read", "reads")}</span>`}</span>
@@ -464,7 +464,7 @@ function commandsPanel() {
     const st = c.status === "running" ? "running" : c.status === "failed" || (c.exit_code ?? 0) !== 0 ? "fail" : c.exit_code === 0 ? "ok" : "unknown";
     const key = "cmd:" + c.item_id;
     const code = c.exit_code != null ? `<span class="code ${c.exit_code === 0 ? "ok" : "fail"}">${c.exit_code}</span>` : c.status === "running" ? "" : `<span class="code">${c.output_lines} ln</span>`;
-    return `<div class="row${isNew("cmds", c.item_id)}" onclick="toggle('${esc(key)}')">
+    return `<div class="row${isNew("cmds", c.item_id)}" data-key="${esc(key)}" onclick="toggle(this.dataset.key)">
       <span class="dot ${st}"></span><span class="cmd" title="${esc(c.display)}">${esc(c.display.split("\n")[0])}</span>${code}
     </div>${open.has(key) ? `<pre class="tail">${esc(c.output_tail || "(no output)")}</pre>` : ""}`;
   }).join("");
@@ -505,7 +505,7 @@ function subagentsPanel() {
       <div class="top"><span class="name">${esc(s.agent || "agent")}</span><span class="badge ${s.status === "completed" ? "done" : s.status}">${s.status}</span>${s.background ? '<span class="badge">background</span>' : ""}</div>
       <div class="desc">${esc(s.description)}</div>
       <div class="counts">${plural(s.items, "step", "steps")} · ${plural(s.commands, "command", "commands")} · ${plural(s.edits, "edit", "edits")}${s.model ? " · " + esc(s.model) : ""}</div>
-      ${s.report ? `<div class="report${open.has(key) ? " full" : ""}" onclick="toggle('${esc(key)}')"><div class="md">${markdown(s.report)}</div></div>` : ""}
+      ${s.report ? `<div class="report${open.has(key) ? " full" : ""}" data-key="${esc(key)}" onclick="toggle(this.dataset.key)"><div class="md">${markdown(s.report)}</div></div>` : ""}
     </div>`;
   }).join("")}</section>`;
 }
