@@ -212,11 +212,107 @@ pub struct Turn {
     /// background subagent reporting back) or that began before acc-ui saw
     /// them.
     pub prompt: Option<String>,
+    /// What the agent said last in this turn: its answer once the turn
+    /// ends, its latest message while it runs. Earlier messages and
+    /// reasoning are in `items`, for apps that fold them away.
+    pub narrative: Option<String>,
+    pub narrative_item: Option<String>,
     /// The main conversation's items in this turn, in order.
     pub items: Vec<String>,
+    pub digest: Digest,
+    pub outcome: TurnOutcome,
     pub open: bool,
+    /// Best known start and end, ms since the Unix epoch, from the times
+    /// ACC reports (state observations, item timings).
+    pub started_at_ms: Option<u64>,
+    pub ended_at_ms: Option<u64>,
     /// The turn's aggregated unified diff, where the harness sends one.
     pub diff: Option<String>,
+}
+
+impl Turn {
+    pub fn duration_ms(&self) -> Option<u64> {
+        Some(self.ended_at_ms?.saturating_sub(self.started_at_ms?))
+    }
+}
+
+/// How a turn ended.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnOutcome {
+    #[default]
+    Running,
+    Done,
+    /// The harness reported an error.
+    Failed,
+    /// A new prompt or the end of the process cut it short.
+    Interrupted,
+    /// It ended with background work (a subagent) that starts another turn.
+    Waiting,
+}
+
+/// What a turn did, counted, for a one-line summary under its prompt.
+/// Subagents' work in the turn counts too.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Digest {
+    /// Distinct files changed, of them created and deleted.
+    pub files_changed: u32,
+    pub files_created: u32,
+    pub files_deleted: u32,
+    pub lines_added: u32,
+    pub lines_removed: u32,
+    /// Distinct files read through read tools.
+    pub files_read: u32,
+    pub commands: u32,
+    /// Commands that exited non-zero or failed.
+    pub commands_failed: u32,
+    pub subagents: u32,
+    /// Other tool calls (searches, fetches, MCP tools).
+    pub tools: u32,
+}
+
+impl Digest {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// An English line such as `Edited 3 files (+19 −3) · read 2 files ·
+    /// ran 3 commands, 1 failed · 1 subagent`. Apps that localise build
+    /// their own from the fields.
+    pub fn summary(&self) -> String {
+        let n =
+            |count: u32, one: &str, many: &str| format!("{count} {}", if count == 1 { one } else { many });
+        let mut parts = Vec::new();
+        if self.files_changed > 0 {
+            parts.push(format!(
+                "Edited {} (+{} −{})",
+                n(self.files_changed, "file", "files"),
+                self.lines_added,
+                self.lines_removed
+            ));
+        }
+        if self.files_read > 0 {
+            parts.push(format!("read {}", n(self.files_read, "file", "files")));
+        }
+        if self.commands > 0 {
+            let mut s = format!("ran {}", n(self.commands, "command", "commands"));
+            if self.commands_failed > 0 {
+                s.push_str(&format!(", {} failed", self.commands_failed));
+            }
+            parts.push(s);
+        }
+        if self.subagents > 0 {
+            parts.push(n(self.subagents, "subagent", "subagents"));
+        }
+        if self.tools > 0 {
+            parts.push(n(self.tools, "other tool", "other tools"));
+        }
+        let mut s = parts.join(" · ");
+        if let Some(c) = s.get(..1) {
+            s = c.to_uppercase() + &s[1..];
+        }
+        s
+    }
 }
 
 /// An item as the session keeps it: identity, place and text.

@@ -36,7 +36,10 @@
           null
         ]
       ],
-      "subagents": []
+      "subagents": [],
+      "digest": "Edited 3 files (+20 −3) · ran 1 command",
+      "outcome": "done",
+      "narrative": "All four tests pass under `python3 -m unittest`, including the new restock test."
     },
     {
       "turn": 1,
@@ -84,7 +87,10 @@
           "completed",
           3
         ]
-      ]
+      ],
+      "digest": "Ran 1 command · 1 subagent",
+      "outcome": "done",
+      "narrative": "I didn't change any files. The subagent read the code without running it and rat"
     }
   ],
   "final": {
@@ -424,6 +430,8 @@
       {
         "index": 0,
         "prompt": "First write a todo list with the TodoWrite tool and keep it updated as you go. Make every file change with the Edit or Write tool, never with shell scripts. Then: fix inventory.py so every test in test_inventory.py passes (restock must raise KeyError for an unknown name), add a test for restocking a known item, and write a short README.md for the module. Run `python3 -m unittest` at the end to confirm.",
+        "narrative": "All four tests pass under `python3 -m unittest`, including the new restock test.\n\nI couldn't use TodoWrite, because it isn't available in this session, so I tracked the steps in my messages instead. Every file change was made with Edit or Write.\n\nThree bugs in `inventory.py`:\n- **`total_value`:** it summed prices only, so I changed it to `price * quantity`.\n- **`low_stock`:** it used `<=`, which wrongly included the \"nut\" item at quantity 5. It now uses `<`.\n- **`restock`:** it silently ignored unknown names. It now raises `KeyError(name)` for them, and returns as soon as it finds a match.\n\nI also added `test_restock_known` to `test_inventory.py`, which checks that restocking \"gear\" by 10 gives 12 and leaves the other items alone. The new `README.md` is a short description of the three functions and how to run the tests.",
+        "narrative_item": "msg_011Ch5VFksT8U1VKXxN8HJPx:0",
         "items": [
           "986aee7d-0696-4076-8583-64c1d0f6f9c6",
           "msg_011Ch5VEvCFpBpCrSHJaGZM3:0",
@@ -440,18 +448,50 @@
           "toolu_01PCKE9RYeNBPD8xW9ac6eAw",
           "msg_011Ch5VFksT8U1VKXxN8HJPx:0"
         ],
+        "digest": {
+          "files_changed": 3,
+          "files_created": 1,
+          "files_deleted": 0,
+          "lines_added": 20,
+          "lines_removed": 3,
+          "files_read": 0,
+          "commands": 1,
+          "commands_failed": 0,
+          "subagents": 0,
+          "tools": 0
+        },
+        "outcome": "done",
         "open": false,
+        "started_at_ms": 1794781022891,
+        "ended_at_ms": 1794781037038,
         "diff": null
       },
       {
         "index": 1,
         "prompt": "Spawn a subagent to review inventory.py for remaining edge cases and have it report back; then summarise its findings for me in a small markdown table. Do not change any files.",
+        "narrative": "I didn't change any files. The subagent read the code without running it and rated nothing high severity.\n\n| # | Function | Edge case | Current behaviour | Severity |\n|---|----------|-----------|-------------------|----------|\n| 1 | `restock` | Negative or zero `amount` | A negative amount is accepted and can push quantity below zero. Zero does nothing but still returns the list. | Medium |\n| 2 | `restock` | Input mutation | It edits the caller's dicts in place and returns the same list object. | Medium |\n| 3 | `restock` | Duplicate names | Only the first match is updated, and later duplicates are ignored. | Medium |\n| 4 | `restock` | Non-numeric `amount` | A string or `None` raises `TypeError`. A float makes the quantity fractional. `True` counts as 1. A string quantity plus a string amount concatenates. | Medium |\n| 5 | `restock` | Missing keys, empty list | A missing `name` or `quantity` raises `KeyError`, which looks the same as the intentional unknown-name error. | Low |\n| 6 | `total_value` | Negative price or quantity | Nothing validates them, so negative values reduce the total. A quantity pushed negative by `restock` corrupts the total. | Medium |\n| 7 | `total_value` | Float prices | Sums can drift, and `assertAlmostEqual` in the test hides this. `Decimal` or integer cents would avoid it. | Low |\n| 8 | `total_value` | Missing keys, non-numeric values, empty list | These raise `KeyError` or `TypeError`. A string price gives a confusing error. An empty list returns `0` rather than `0.0`. | Low |\n| 9 | `low_stock` | Negative quantity | Oversold items are reported as low stock, with no way to flag them as invalid data. | Medium |\n| 10 | `low_stock` | Threshold boundary, duplicate names | The comparison is strict, so quantity equal to the threshold is not low. There are no tests for `0` or negative thresholds, and duplicate names appear twice. | Low |\n| 11 | `low_stock` | Missing keys, `None` threshold | These raise `KeyError` or `TypeError`. | Low |\n| 12 | All | No validation, happy-path tests only | Errors surface as raw `KeyError` or `TypeError`. The tests don't cover negative, zero, empty, duplicate, mutation or boundary cases. | Medium |\n\nThe subagent picked out two findings as the most important, because both can quietly corrupt inventory data:\n- **Unvalidated negative amounts in `restock`.**\n- **In-place mutation of the input.**\n\nI can fix these or add tests for them if you want.",
+        "narrative_item": "msg_011Ch5VH6jKgvxoVW2ffLMnC:0",
         "items": [
           "7dc50300-4b9a-4fd9-9ca2-d25bdba91587",
           "toolu_01HD9qfinnW5gJMoZYZqdCgw",
           "msg_011Ch5VH6jKgvxoVW2ffLMnC:0"
         ],
+        "digest": {
+          "files_changed": 0,
+          "files_created": 0,
+          "files_deleted": 0,
+          "lines_added": 0,
+          "lines_removed": 0,
+          "files_read": 0,
+          "commands": 1,
+          "commands_failed": 0,
+          "subagents": 1,
+          "tools": 0
+        },
+        "outcome": "done",
         "open": false,
+        "started_at_ms": 1794781037040,
+        "ended_at_ms": 1794781058847,
         "diff": null
       }
     ],

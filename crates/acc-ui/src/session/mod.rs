@@ -19,17 +19,18 @@
 
 pub mod event;
 mod model;
+mod restore;
 mod shell;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
 pub use event::Event;
 use event::{Detail, FileChangeKind, ItemKind, ItemStatus, RunState, ToolKind};
 pub use model::{
-    Activity, ActivityKind, Ask, CommandEntry, FileEdit, FileEntry, Header, ItemView, OUTPUT_TAIL_LINES,
-    PlanView, SubagentEntry, Turn,
+    Activity, ActivityKind, Ask, CommandEntry, Digest, FileEdit, FileEntry, Header, ItemView,
+    OUTPUT_TAIL_LINES, PlanView, SubagentEntry, Turn, TurnOutcome,
 };
 pub use shell::unwrap_shell;
 
@@ -102,6 +103,14 @@ pub struct SessionView {
     notices: Vec<String>,
     items: Vec<ItemView>,
     item_index: HashMap<String, usize>,
+    /// Every item of each turn, subagents' included, as indices into
+    /// `items`, for the digests.
+    turn_items: Vec<Vec<usize>>,
+    /// The latest time any event reported, ms since the Unix epoch.
+    last_seen_ms: Option<u64>,
+    /// Rebuilding from a transcript: a new prompt ends the turn before it
+    /// normally, rather than cutting it short.
+    restoring: bool,
 }
 
 impl SessionView {
@@ -142,10 +151,15 @@ impl SessionView {
                 }
                 ch.header = true;
             }
-            Event::StateChanged { state, message } => {
+            Event::StateChanged {
+                state,
+                message,
+                observed_at_ms,
+            } => {
                 self.header.state = state;
                 self.header.state_message = message;
                 ch.header = true;
+                self.seen(observed_at_ms, &mut ch);
             }
             Event::TitleChanged { title } => {
                 if !title.trim().is_empty() {
@@ -191,6 +205,7 @@ impl SessionView {
                 completed_at_ms,
             } => {
                 self.item_detail(&id, detail, Some(status), completed_at_ms, &mut ch);
+                self.seen(completed_at_ms, &mut ch);
                 self.clear_asks(&mut ch, |a| a.item_id.as_deref() == Some(id.as_str()));
             }
             Event::PermissionRequested {
@@ -226,7 +241,12 @@ impl SessionView {
                 Changes::push(&mut ch.turns, t);
             }
             Event::TurnCompleted => {
-                self.close_turn(&mut ch);
+                let outcome = match self.header.state {
+                    RunState::Error => TurnOutcome::Failed,
+                    RunState::Waiting => TurnOutcome::Waiting,
+                    _ => TurnOutcome::Done,
+                };
+                self.close_turn(outcome, &mut ch);
                 self.clear_asks(&mut ch, |_| true);
                 ch.now = true;
             }
@@ -235,7 +255,7 @@ impl SessionView {
                 self.header.exit_code = code;
                 self.header.state = RunState::Exited;
                 ch.header = true;
-                self.close_turn(&mut ch);
+                self.close_turn(TurnOutcome::Interrupted, &mut ch);
                 self.clear_asks(&mut ch, |_| true);
                 ch.now = true;
             }
@@ -339,9 +359,15 @@ impl SessionView {
             None => self.open_turn(ch),
         };
         if parent.is_none() {
-            self.turns[turn].items.push(id.clone());
+            let t = &mut self.turns[turn];
+            t.items.push(id.clone());
+            if kind == ItemKind::AgentMessage {
+                t.narrative_item = Some(id.clone());
+                t.narrative = Some(String::new());
+            }
             Changes::push(&mut ch.turns, turn);
         }
+        self.turn_items[turn].push(self.items.len());
         if let Some(p) = parent.as_deref()
             && let Some(&s) = self.subagent_index.get(p)
         {
@@ -363,6 +389,7 @@ impl SessionView {
         });
         Changes::push(&mut ch.items, id.clone());
         ch.now = true;
+        self.seen(started_at_ms, ch);
         self.item_detail(&id, detail, None, None, ch);
     }
 
@@ -381,6 +408,11 @@ impl SessionView {
                 item.text.push_str(text);
                 Changes::push(&mut ch.items, id.to_owned());
                 let (kind, parent, turn) = (item.kind, item.parent.is_none(), item.turn);
+                let t = &mut self.turns[turn];
+                if t.narrative_item.as_deref() == Some(id) {
+                    t.narrative.get_or_insert_with(String::new).push_str(text);
+                    Changes::push(&mut ch.turns, turn);
+                }
                 if kind == ItemKind::UserMessage && parent {
                     let t = &mut self.turns[turn];
                     t.prompt.get_or_insert_with(String::new).push_str(text);
@@ -448,6 +480,7 @@ impl SessionView {
             }
             _ => {}
         }
+        self.refresh_digest(item.turn, ch);
     }
 
     // Commands
@@ -666,27 +699,115 @@ impl SessionView {
     }
 
     fn new_turn(&mut self, ch: &mut Changes) -> usize {
-        self.close_turn(ch);
+        let outcome = if self.restoring {
+            TurnOutcome::Done
+        } else {
+            TurnOutcome::Interrupted
+        };
+        self.close_turn(outcome, ch);
         let index = self.turns.len();
         self.turns.push(Turn {
             index,
             prompt: None,
+            narrative: None,
+            narrative_item: None,
             items: Vec::new(),
+            digest: Digest::default(),
+            outcome: TurnOutcome::Running,
             open: true,
+            // Harnesses report working just before the prompt item.
+            started_at_ms: match self.header.state {
+                RunState::Working { .. } => self.last_seen_ms,
+                _ => None,
+            },
+            ended_at_ms: None,
             diff: None,
         });
+        self.turn_items.push(Vec::new());
         self.header.turns = self.turns.len();
         ch.header = true;
         Changes::push(&mut ch.turns, index);
         index
     }
 
-    fn close_turn(&mut self, ch: &mut Changes) {
+    fn close_turn(&mut self, outcome: TurnOutcome, ch: &mut Changes) {
         if let Some(t) = self.turns.last_mut()
             && t.open
         {
             t.open = false;
+            t.outcome = outcome;
+            t.ended_at_ms = self.last_seen_ms.max(t.started_at_ms);
             Changes::push(&mut ch.turns, t.index);
+        }
+    }
+
+    /// Notes a time an event reported. The open turn starts at the first
+    /// one after it opened.
+    fn seen(&mut self, ms: Option<u64>, ch: &mut Changes) {
+        let Some(ms) = ms else { return };
+        self.last_seen_ms = self.last_seen_ms.max(Some(ms));
+        if let Some(t) = self.turns.last_mut()
+            && t.open
+            && t.started_at_ms.is_none()
+        {
+            t.started_at_ms = Some(ms);
+            Changes::push(&mut ch.turns, t.index);
+        }
+    }
+
+    /// Counts what turn `turn` did, from its items.
+    fn refresh_digest(&mut self, turn: usize, ch: &mut Changes) {
+        let mut d = Digest::default();
+        let mut changed: HashMap<&str, FileChangeKind> = HashMap::new();
+        let mut read: HashSet<&str> = HashSet::new();
+        for &i in &self.turn_items[turn] {
+            let item = &self.items[i];
+            let completed = item.status == ItemStatus::Completed;
+            match &item.detail {
+                Detail::FileChange { files, .. } if completed => {
+                    for f in files {
+                        d.lines_added += f.added;
+                        d.lines_removed += f.removed;
+                        let kind = changed.entry(&f.path).or_insert(f.kind);
+                        // Created this turn and edited since: still new.
+                        if *kind != FileChangeKind::Add || f.kind == FileChangeKind::Delete {
+                            *kind = f.kind;
+                        }
+                    }
+                }
+                Detail::Command { exit_code, .. } => {
+                    d.commands += 1;
+                    if item.status == ItemStatus::Failed || exit_code.is_some_and(|c| c != 0) {
+                        d.commands_failed += 1;
+                    }
+                }
+                Detail::Subagent { .. } if !is_coordination(&item.detail) => d.subagents += 1,
+                Detail::Tool {
+                    kind: ToolKind::Read,
+                    paths,
+                    title,
+                    ..
+                } => {
+                    if completed {
+                        if !paths.is_empty() {
+                            read.extend(paths.iter().map(String::as_str));
+                        } else if title.starts_with('/') {
+                            read.insert(title);
+                        }
+                    }
+                }
+                Detail::Tool { tool, .. } if !is_bookkeeping(tool) => d.tools += 1,
+                _ => {}
+            }
+        }
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        d.files_changed = count(changed.len());
+        d.files_created = count(changed.values().filter(|k| **k == FileChangeKind::Add).count());
+        d.files_deleted = count(changed.values().filter(|k| **k == FileChangeKind::Delete).count());
+        d.files_read = count(read.iter().filter(|p| !changed.contains_key(*p)).count());
+        if self.turns[turn].digest != d {
+            self.turns[turn].digest = d;
+            Changes::push(&mut ch.turns, turn);
         }
     }
 
@@ -773,6 +894,13 @@ fn tool_activity(tool: &str, kind: ToolKind) -> ActivityKind {
     } else {
         ActivityKind::Working
     }
+}
+
+/// Tools that manage the agent's own work rather than act on the project.
+/// They don't count in digests.
+fn is_bookkeeping(tool: &str) -> bool {
+    let t = tool.to_ascii_lowercase();
+    t.contains("todo") || t.contains("plan") || t == "toolsearch" || t == "skill"
 }
 
 /// A subagent-shaped call that names no agent, child or task: waiting on

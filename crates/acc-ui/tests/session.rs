@@ -8,7 +8,8 @@
 mod common;
 
 use acc_ui::SessionView;
-use acc_ui::session::{ActivityKind, Event};
+use acc_ui::session::event::ItemKind;
+use acc_ui::session::{ActivityKind, Digest, Event, TurnOutcome};
 use serde_json::{Value, json};
 
 fn replay(lines: &str) -> (SessionView, Vec<Value>) {
@@ -49,6 +50,9 @@ fn replay_into(mut view: SessionView, lines: &str) -> (SessionView, Vec<Value>) 
                 "files": s.files.iter().map(|f| json!([f.display, f.change, f.added, f.removed, f.reads])).collect::<Vec<_>>(),
                 "commands": s.commands.iter().map(|c| json!([c.display.lines().next(), c.exit_code])).collect::<Vec<_>>(),
                 "subagents": s.subagents.iter().map(|a| json!([a.agent, a.status, a.items])).collect::<Vec<_>>(),
+                "digest": s.turns.last().map(|t| t.digest.summary()),
+                "outcome": s.turns.last().map(|t| t.outcome),
+                "narrative": s.turns.last().and_then(|t| t.narrative.as_deref()).map(|n| n.chars().take(80).collect::<String>()),
             }));
         }
     }
@@ -128,7 +132,218 @@ fn recorded_sessions_fill_every_region() {
         let sub = &view.subagents()[0];
         assert!(sub.report.is_some() && sub.items > 0, "{name}: {sub:?}");
         assert_eq!(sub.turn, 1, "{name}");
+
+        let [fix, review] = view.turns() else { panic!() };
+        for t in [fix, review] {
+            assert_eq!(t.outcome, TurnOutcome::Done, "{name}");
+            assert!(
+                t.narrative.as_deref().is_some_and(|n| !n.trim().is_empty()),
+                "{name}"
+            );
+            assert_eq!(
+                t.narrative_item.as_ref(),
+                t.items
+                    .iter()
+                    .rev()
+                    .find(|i| view.item(i).unwrap().kind == ItemKind::AgentMessage),
+                "{name}"
+            );
+        }
+        let d = &fix.digest;
+        assert_eq!(
+            (d.files_changed, d.files_created, d.commands_failed, d.subagents),
+            (3, 1, 0, 0),
+            "{name}: {d:?}"
+        );
+        assert!(d.commands >= 1 && d.lines_added > 0, "{name}: {d:?}");
+        assert!(
+            fix.digest.summary().starts_with("Edited 3 files (+"),
+            "{name}: {}",
+            fix.digest.summary()
+        );
+        let d = &review.digest;
+        assert_eq!((d.files_changed, d.subagents), (0, 1), "{name}: {d:?}");
+        assert!(d.commands >= 1, "{name}: the subagent's commands count: {d:?}");
+        assert!(
+            review.narrative.as_deref().unwrap().contains('|'),
+            "{name}: the answer is a markdown table"
+        );
     }
+}
+
+/// ACC's transcript of a recorded session: its item events folded into
+/// items, as `acc_core::transcript::Transcript` stores them.
+fn transcript(lines: &str) -> Value {
+    let mut items: Vec<Value> = Vec::new();
+    let find = |items: &mut Vec<Value>, id: &str| items.iter().position(|i| i["id"] == id);
+    for line in lines.lines() {
+        let e: Value = serde_json::from_str(line).unwrap();
+        let id = e["id"].as_str().unwrap_or("");
+        match e["type"].as_str().unwrap() {
+            "item_started" => {
+                let seq = items.len();
+                items.push(
+                    json!({"id": id, "kind": e["kind"], "status": "running", "text": "",
+                    "detail": e["detail"], "native": null, "parent": e["parent"], "seq": seq}),
+                );
+            }
+            // Like ACC's transcript, frames for items it never saw start
+            // are dropped (Codex completes `subAgentActivity` calls it
+            // never started).
+            ty @ ("item_delta" | "item_updated" | "item_completed") => {
+                let Some(i) = find(&mut items, id) else { continue };
+                match ty {
+                    "item_delta" => {
+                        let text =
+                            items[i]["text"].as_str().unwrap().to_owned() + e["text"].as_str().unwrap();
+                        items[i]["text"] = text.into();
+                    }
+                    "item_updated" => items[i]["detail"] = e["detail"].clone(),
+                    _ => {
+                        items[i]["detail"] = e["detail"].clone();
+                        items[i]["status"] = e["status"].clone();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    json!({"items": items, "next_seq": items.len()})
+}
+
+#[test]
+fn transcripts_restore_the_same_regions_as_live_events() {
+    for name in ["claude-fix-and-review", "codex-fix-and-review"] {
+        let lines = std::fs::read_to_string(common::dir("sessions").join(format!("{name}.ndjson"))).unwrap();
+        let (live, _) = replay(&lines);
+        let t = transcript(&lines);
+        let snapshot = json!({"v": 1, "spec": {"harness": live.header().harness, "cwd": "/work", "title": "Saved"},
+                              "transcript": t, "usage": live.header().usage, "permissions": [], "exited": false});
+        for (json, from) in [
+            (t.to_string(), "transcript"),
+            (t["items"].to_string(), "items"),
+            (snapshot.to_string(), "snapshot"),
+        ] {
+            let restored = SessionView::from_transcript(&json).unwrap();
+            let strip = |v: &SessionView| {
+                let s = v.snapshot();
+                let turns: Vec<_> = s
+                    .turns
+                    .iter()
+                    .map(|t| json!([t.prompt, t.narrative, t.items, t.digest, t.outcome, t.open]))
+                    .collect();
+                let files: Vec<_> = s
+                    .files
+                    .iter()
+                    .map(|f| json!([f.path, f.change, f.added, f.removed, f.reads, f.edits.len()]))
+                    .collect();
+                let commands: Vec<_> = s
+                    .commands
+                    .iter()
+                    .map(|c| json!([c.command, c.status, c.exit_code, c.output_tail]))
+                    .collect();
+                let subagents: Vec<_> = s
+                    .subagents
+                    .iter()
+                    .map(|a| json!([a.agent, a.status, a.report, a.items, a.commands]))
+                    .collect();
+                json!({"turns": turns, "files": files, "commands": commands, "subagents": subagents, "now": s.now.len()})
+            };
+            assert_eq!(strip(&restored), strip(&live), "{name} from {from}");
+            if from == "snapshot" {
+                assert_eq!(restored.header().title.as_deref(), Some("Saved"));
+                assert_eq!(restored.header().root.as_deref(), Some("/work"));
+                assert!(
+                    !restored.files()[0].display.contains('/'),
+                    "{name}: shown relative to the root"
+                );
+                assert_eq!(restored.header().usage, live.header().usage);
+            }
+        }
+    }
+}
+
+#[test]
+fn restoring_keeps_a_running_turn_open() {
+    let items = json!([
+        {"id":"u","kind":"user_message","status":"completed","text":"Go","detail":{"type":"text"},"seq":0},
+        {"id":"c","kind":"command_execution","status":"running","text":"building","detail":{"type":"command","tool":"x","command":"make","output":""},"seq":1}
+    ]);
+    let view = SessionView::from_transcript(&items.to_string()).unwrap();
+    assert!(view.turns()[0].open);
+    assert_eq!(view.now()[0].kind, ActivityKind::Running);
+    assert_eq!(view.commands()[0].output_tail, "building");
+}
+
+#[test]
+fn turn_outcomes_and_durations() {
+    let mut view = SessionView::new();
+    let prompt =
+        |id: &str| json!({"type":"item_started","id":id,"kind":"user_message","detail":{"type":"text"}});
+    let state = |s: &str, ms: u64| json!({"type":"state_changed","state":{"state":s},"observed_at_ms":ms});
+    apply(
+        &mut view,
+        &[
+            prompt("u1"),
+            state("working", 1_000),
+            state("done", 4_500),
+            json!({"type":"turn_completed"}),
+            prompt("u2"),
+            state("working", 10_000),
+            prompt("u3"), // sent mid-turn
+            state("error", 12_000),
+            json!({"type":"turn_completed"}),
+            prompt("u4"),
+            state("waiting", 13_000),
+            json!({"type":"turn_completed"}),
+            prompt("u5"),
+            json!({"type":"exited","code":1}),
+        ],
+    );
+    let outcomes: Vec<_> = view.turns().iter().map(|t| t.outcome).collect();
+    assert_eq!(
+        outcomes,
+        [
+            TurnOutcome::Done,
+            TurnOutcome::Interrupted,
+            TurnOutcome::Failed,
+            TurnOutcome::Waiting,
+            TurnOutcome::Interrupted
+        ]
+    );
+    assert_eq!(view.turns()[0].duration_ms(), Some(3_500));
+    assert_eq!(view.turns()[1].duration_ms(), Some(0));
+
+    // The working state usually comes just before the prompt item.
+    let mut view = SessionView::new();
+    apply(
+        &mut view,
+        &[
+            state("working", 1_000),
+            prompt("u1"),
+            state("done", 9_000),
+            json!({"type":"turn_completed"}),
+        ],
+    );
+    assert_eq!(view.turns()[0].duration_ms(), Some(8_000));
+}
+
+#[test]
+fn digest_summaries() {
+    let mut d = Digest::default();
+    assert_eq!(d.summary(), "");
+    d.files_read = 1;
+    assert_eq!(d.summary(), "Read 1 file");
+    d.files_changed = 3;
+    d.lines_added = 19;
+    d.lines_removed = 3;
+    d.commands = 3;
+    d.commands_failed = 1;
+    d.subagents = 1;
+    assert_eq!(
+        d.summary(),
+        "Edited 3 files (+19 −3) · read 1 file · ran 3 commands, 1 failed · 1 subagent"
+    );
 }
 
 fn apply(view: &mut SessionView, events: &[Value]) {
