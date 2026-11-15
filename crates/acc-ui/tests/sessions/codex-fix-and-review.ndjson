@@ -135,78 +135,7 @@
 {"type": "quota", "account": null, "plan": "go", "windows": [{"id": "primary", "used_percent": 2.0, "window_minutes": 43200, "resets_at": 1795737107, "status": null}]}
 {"type": "turn_diff", "turn_id": "01a1e149-0a72-7370-bd4b-9ae3943af804", "diff": "diff --git a/README.md b/README.md\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..25bf5ca450372fedf0ff734c1b946f795c61cb39\n--- /dev/null\n+++ b/README.md\n@@ -0,0 +1,10 @@\n+# Inventory module\n+\n+`inventory.py` provides small helpers for working with a list of inventory\n+items. Each item is a dictionary with `name`, `price`, and `quantity` fields.\n+\n+- `total_value(items)` returns the sum of each item's price times its quantity.\n+- `low_stock(items, threshold=5)` returns names of items with quantity below\n+  the threshold.\n+- `restock(items, name, amount)` adds the amount to a matching item and returns\n+  the same list. It raises `KeyError` if no item has that name.\ndiff --git a/inventory.py b/inventory.py\nindex 03301803da7331ff2a873d6a27385392f4628a41..4bc00f0c8d97330415bcbfdf33617a22e92ccc00\n--- a/inventory.py\n+++ b/inventory.py\n@@ -3,16 +3,17 @@\n \n def total_value(items):\n     \"\"\"Sum price * quantity over items.\"\"\"\n-    return sum(i[\"price\"] for i in items)\n+    return sum(i[\"price\"] * i[\"quantity\"] for i in items)\n \n \n def low_stock(items, threshold=5):\n     \"\"\"Names of items with quantity below the threshold.\"\"\"\n-    return [i[\"name\"] for i in items if i[\"quantity\"] <= threshold]\n+    return [i[\"name\"] for i in items if i[\"quantity\"] < threshold]\n \n \n def restock(items, name, amount):\n     for i in items:\n         if i[\"name\"] == name:\n             i[\"quantity\"] += amount\n-    return items\n+            return items\n+    raise KeyError(name)\ndiff --git a/test_inventory.py b/test_inventory.py\nindex f7b087766519a872f93ccb0a6217c2234257f097..5f2a97db14d9c5517101469adbd13537e4288284\n--- a/test_inventory.py\n+++ b/test_inventory.py\n@@ -20,6 +20,11 @@\n         with self.assertRaises(KeyError):\n             restock([dict(i) for i in ITEMS], \"washer\", 3)\n \n+    def test_restock_known(self):\n+        items = [dict(i) for i in ITEMS]\n+        self.assertIs(restock(items, \"nut\", 3), items)\n+        self.assertEqual(items[1][\"quantity\"], 8)\n+\n \n if __name__ == \"__main__\":\n     unittest.main()\n"}
 {"type": "item_started", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "kind": "agent_message", "detail": {"type": "text"}}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "Implemented"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " the"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " inventory"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " fixes"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ","}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " added"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " a"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " test"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " for"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " rest"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "ocking"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " a"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " known"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " item"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ","}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " and"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " wrote"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " ["}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "README"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ".md"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "]"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "(/"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "tmp"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "/"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "acc"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "-ui"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "-c"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "od"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "ex"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "/"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "README"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ".md"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ")."}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " `"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "python"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "3"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " -"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "m"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " unittest"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "`"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " passes"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " all"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " "}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "4"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " tests"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ".\n\n"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "The"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " requested"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " `"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "update"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "_plan"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "`"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " tool"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " wasn"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "’t"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " available"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " in"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " this"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " environment"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": ","}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " so"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " I"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " couldn"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "’t"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " create"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " or"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " update"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " a"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " tool"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "-based"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": " plan"}
-{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "."}
+{"type": "item_delta", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "text": "Implemented the inventory fixes, added a test for restocking a known item, and wrote [README.md](/work/README.md). `python3 -m unittest` passes all 4 tests.\n\nThe requested `update_plan` tool wasn’t available in this environment, so I couldn’t create or update a tool-based plan."}
 {"type": "item_completed", "id": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b", "status": "completed", "detail": {"type": "text"}}
 {"type": "usage", "input_tokens": 111889, "output_tokens": 1014, "cache_read_tokens": 89600, "cache_write_tokens": 0, "cost_usd": null, "context_used": 23172, "context_window": 258400}
 {"type": "quota", "account": null, "plan": "go", "windows": [{"id": "primary", "used_percent": 2.0, "window_minutes": 43200, "resets_at": 1795737107, "status": null}]}

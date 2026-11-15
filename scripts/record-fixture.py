@@ -9,8 +9,11 @@ option (or the first option), and writes the events it printed to OUT.
         claude /tmp/scratch crates/acc-ui/tests/sessions/claude-fix.ndjson \\
         "first prompt" "second prompt"
 
-Afterwards, scrub OUT: home paths become `/home/user`, the scratch path
-becomes `/work`.
+OUT is scrubbed for publishing: `native` payloads are dropped, the
+scratch path becomes `/work`, the home directory `/home/user`, and quota
+account ids zeros. A path split across streamed deltas is caught by
+scrubbing each item's whole text. `--scrub-only OUT CWD` re-scrubs an
+existing recording.
 """
 
 import argparse
@@ -43,7 +46,45 @@ def pick_option(event):
     return options[0]["id"] if options else "yes"
 
 
+def scrub_text(text, cwd):
+    text = text.replace(cwd.rstrip("/"), "/work")
+    return text.replace(os.path.expanduser("~"), "/home/user")
+
+
+def scrub(lines, cwd):
+    """Scrubbed copies of the NDJSON event `lines`."""
+    events = [json.loads(l) for l in lines]
+    for e in events:
+        e.pop("native", None)
+        if e.get("type") == "quota" and e.get("account"):
+            e["account"] = "00000000-0000-0000-0000-000000000000"
+    # Streamed text: scrub each item's whole text; where that changes it,
+    # its first delta carries the scrubbed text and the rest are dropped.
+    whole = {}
+    for e in events:
+        if e.get("type") == "item_delta":
+            whole[e["id"]] = whole.get(e["id"], "") + e.get("text", "")
+    rewrite = {i for i, t in whole.items() if scrub_text(t, cwd) != t}
+    out, done = [], set()
+    for e in events:
+        if e.get("type") == "item_delta" and e["id"] in rewrite:
+            if e["id"] in done:
+                continue
+            e["text"] = scrub_text(whole[e["id"]], cwd)
+            done.add(e["id"])
+        out.append(scrub_text(json.dumps(e, ensure_ascii=False), cwd))
+    return out
+
+
 def main():
+    if len(sys.argv) == 4 and sys.argv[1] == "--scrub-only":
+        out, cwd = sys.argv[2], sys.argv[3]
+        with open(out) as f:
+            lines = [l for l in f if l.strip()]
+        with open(out, "w") as f:
+            f.write("\n".join(scrub(lines, cwd)) + "\n")
+        return
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--acc", default="acc")
     ap.add_argument("--turn-timeout", type=float, default=900)
@@ -113,7 +154,7 @@ def main():
         proc.kill()
 
     with open(args.out, "w") as f:
-        f.write("\n".join(events) + "\n")
+        f.write("\n".join(scrub(events, os.path.abspath(args.cwd))) + "\n")
     print(f"acc-record: {len(events)} events -> {args.out}", file=sys.stderr)
 
 
