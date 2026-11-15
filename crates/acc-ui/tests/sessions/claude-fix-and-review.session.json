@@ -385,9 +385,11 @@
         "turn": 0,
         "command": "python3 -m unittest 2>&1 | tail -8",
         "display": "python3 -m unittest 2>&1 | tail -8",
+        "headline": "python3 -m unittest 2>&1 | tail -8",
         "cwd": null,
         "status": "completed",
         "exit_code": null,
+        "outcome": "unknown",
         "output_tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK",
         "output_lines": 5,
         "started_at_ms": null,
@@ -399,9 +401,11 @@
         "turn": 1,
         "command": "cat -n /work/inventory.py; cat -n /work/test_inventory.py",
         "display": "cat -n /work/inventory.py; cat -n /work/test_inventory.py",
+        "headline": "cat -n /work/inventory.py; cat -n /work/test_inventory.py",
         "cwd": null,
         "status": "completed",
         "exit_code": null,
+        "outcome": "unknown",
         "output_tail": "    12\t\n    13\t\n    14\tdef restock(items, name, amount):\n    15\t    \"\"\"Add amount to the named item's quantity; raise KeyError if unknown.\"\"\"\n    16\t    for i in items:\n    17\t        if i[\"name\"] == name:\n    18\t            i[\"quantity\"] += amount\n    19\t            return items\n    20\t    raise KeyError(name)\n     1\timport unittest\n     2\t\n     3\tfrom inventory import low_stock, restock, total_value\n     4\t\n     5\tITEMS = [\n     6\t    {\"name\": \"bolt\", \"price\": 0.5, \"quantity\": 100},\n     7\t    {\"name\": \"nut\", \"price\": 0.25, \"quantity\": 5},\n     8\t    {\"name\": \"gear\", \"price\": 12.0, \"quantity\": 2},\n     9\t]\n    10\t\n    11\t\n    12\tclass InventoryTest(unittest.TestCase):\n    13\t    def test_total_value(self):\n    14\t        self.assertAlmostEqual(total_value(ITEMS), 50 + 1.25 + 24)\n    15\t\n    16\t    def test_low_stock(self):\n    17\t        self.assertEqual(low_stock(ITEMS), [\"gear\"])\n    18\t\n    19\t    def test_restock_known(self):\n    20\t        items = [dict(i) for i in ITEMS]\n    21\t        result = restock(items, \"gear\", 10)\n    22\t        self.assertEqual(result[2][\"quantity\"], 12)\n    23\t        self.assertEqual(result[0][\"quantity\"], 100)\n    24\t\n    25\t    def test_restock_unknown(self):\n    26\t        with self.assertRaises(KeyError):\n    27\t            restock([dict(i) for i in ITEMS], \"washer\", 3)\n    28\t\n    29\t\n    30\tif __name__ == \"__main__\":\n    31\t    unittest.main()",
         "output_lines": 51,
         "started_at_ms": null,
@@ -448,6 +452,7 @@
           "toolu_01PCKE9RYeNBPD8xW9ac6eAw",
           "msg_011Ch5VFksT8U1VKXxN8HJPx:0"
         ],
+        "steps": 12,
         "digest": {
           "files_changed": 3,
           "files_created": 1,
@@ -458,7 +463,23 @@
           "commands": 1,
           "commands_failed": 0,
           "subagents": 0,
-          "tools": 0
+          "tools": 0,
+          "parts": [
+            {
+              "kind": "edited",
+              "files": 3,
+              "created": 1,
+              "deleted": 0,
+              "added": 20,
+              "removed": 3
+            },
+            {
+              "kind": "ran",
+              "commands": 1,
+              "failed": 0
+            }
+          ],
+          "summary": "Edited 3 files (+20 −3) · ran 1 command"
         },
         "outcome": "done",
         "open": false,
@@ -476,6 +497,7 @@
           "toolu_01HD9qfinnW5gJMoZYZqdCgw",
           "msg_011Ch5VH6jKgvxoVW2ffLMnC:0"
         ],
+        "steps": 1,
         "digest": {
           "files_changed": 0,
           "files_created": 0,
@@ -486,7 +508,19 @@
           "commands": 1,
           "commands_failed": 0,
           "subagents": 1,
-          "tools": 0
+          "tools": 0,
+          "parts": [
+            {
+              "kind": "ran",
+              "commands": 1,
+              "failed": 0
+            },
+            {
+              "kind": "subagents",
+              "count": 1
+            }
+          ],
+          "summary": "Ran 1 command · 1 subagent"
         },
         "outcome": "done",
         "open": false,

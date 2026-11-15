@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::event::{AskKind, Detail, FileChangeKind, ItemKind, ItemStatus, LineTag};
+use super::event::{AskKind, Detail, FileChangeKind, ItemKind, ItemStatus, LineTag, OptionKind};
 use super::{Ask, SessionView, display_path, first_line, unwrap_shell};
 use crate::blocks::blocks;
 use crate::normalize::{Normalized, normalize_trusted, normalize_value, valid_id};
@@ -119,9 +119,7 @@ impl SessionView {
                     "label": if o.label.is_empty() { &o.id } else { &o.label },
                     "action": { "type": "answer", "request_id": ask.request_id, "option_id": o.id },
                 });
-                if let Some(role @ ("allow_once" | "allow_always" | "reject_once" | "reject_always")) =
-                    o.kind.as_deref()
-                {
+                if let Some(role) = o.kind.and_then(OptionKind::as_str) {
                     opt["role"] = role.into();
                 }
                 opt

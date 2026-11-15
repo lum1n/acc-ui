@@ -308,9 +308,47 @@ pub struct AskOption {
     pub id: String,
     #[serde(default)]
     pub label: String,
-    /// `allow_once`, `allow_always`, `reject_once`, `reject_always`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
+    pub kind: Option<OptionKind>,
+}
+
+/// What choosing an [`AskOption`] does, so apps can tell the approving
+/// option from the declining one and mark the ones that stick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OptionKind {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+    #[serde(other)]
+    Other,
+}
+
+impl OptionKind {
+    pub fn allows(self) -> bool {
+        matches!(self, Self::AllowOnce | Self::AllowAlways)
+    }
+
+    pub fn rejects(self) -> bool {
+        matches!(self, Self::RejectOnce | Self::RejectAlways)
+    }
+
+    /// Whether the choice also applies to later requests like this one.
+    pub fn persists(self) -> bool {
+        matches!(self, Self::AllowAlways | Self::RejectAlways)
+    }
+
+    /// The ACC name, `allow_once` and so on; `None` for [`Self::Other`].
+    pub fn as_str(self) -> Option<&'static str> {
+        match self {
+            Self::AllowOnce => Some("allow_once"),
+            Self::AllowAlways => Some("allow_always"),
+            Self::RejectOnce => Some("reject_once"),
+            Self::RejectAlways => Some("reject_always"),
+            Self::Other => None,
+        }
+    }
 }
 
 /// The harness's usage report. Cost is a running total everywhere; tokens
