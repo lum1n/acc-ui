@@ -123,9 +123,12 @@ copy, matched by hash. With an ACC that doesn't send references, the `[image]` t
 stays. A restored transcript has no references; that waits for a media store in ACC.
 
 The recorded sessions in `crates/acc-ui/tests/sessions` (Claude Code and Codex fixing
-a bug, then delegating a review to a subagent) replay into golden
-`<name>.session.json` files. Record new ones with `scripts/record-fixture.py` against
-a built `acc`.
+a bug, then delegating a review to a subagent; and one feature each: questions, a plan
+approval, test runners and type checkers, image prompts, Cursor and Copilot over ACP,
+the `acc_ui` server) replay into golden `<name>.session.json` files. Record new ones
+with `scripts/record-fixture.py` against a built `acc`; it can answer questions and plan
+approvals (`--answer`), attach images (`--image`), and give Claude the `acc_ui` server
+(`--acc-ui`, `--ui-answer`).
 
 ### Replay
 
@@ -294,6 +297,7 @@ UPDATE_GOLDEN=1 cargo test       # rewrite golden files and snapshots; review th
 scripts/test-shells.sh           # the MCP server under dash+mawk, busybox and macOS-like bash 3.2 + BWK awk (Docker)
 cargo audit                      # advisories; the allow-list is .cargo/audit.toml
 cargo run -p acc-ui-agent --example dump -- conventions|conventions-skill|schema|skill|instructions|server|setup|tools
+cargo run -p acc-ui-agent --example dump -- answer SESSION ID VALUES_JSON   # the answer script
 ```
 
 The golden specs are in `crates/acc-ui/tests/specs`: `<name>.json` normalises to
