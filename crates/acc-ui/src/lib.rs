@@ -31,7 +31,7 @@ pub mod session;
 pub mod spec;
 
 pub use blocks::markdown_blocks;
-pub use conventions::{conventions, conventions_skill};
+pub use conventions::{CONVENTIONS_SKILL, conventions, conventions_skill, has_conventions, with_conventions};
 pub use fence::{is_component_fence, parse_fence};
 pub use links::{Link, LinkKind, detect_links};
 pub use normalize::{Normalized, normalize, normalize_value, valid_id};

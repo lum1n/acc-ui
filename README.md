@@ -158,6 +158,17 @@ renders best, there are two texts. Both teach plain markdown that reads fine any
 Formatting matters on every reply, and a skill only loads when the model thinks to
 load it. So the short text does the steady work and the skill covers the details.
 
+Wiring them into an ACC session:
+
+- Launch with `system_prompt: with_conventions(own_instructions)`. ACC appends it to
+  the harness's system prompt on every harness (Claude and pi `--append-system-prompt`,
+  Codex developer instructions, ACP `systemPrompt`) and keeps it for relaunches.
+  `with_conventions` leaves text that already holds the conventions alone, and
+  `has_conventions(spec.system_prompt)` tells whether a stored session got them.
+- Install the skill once per host with `acc-loadout`'s skill store, as
+  `CONVENTIONS_SKILL` (`~/.agents/skills/acc-ui-formatting/SKILL.md`), and link it for
+  the harnesses you use.
+
 ## Opt-in: agents writing components (`acc-ui-agent`)
 
 For clients that want agents to make components on purpose and accept the context

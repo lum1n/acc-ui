@@ -199,6 +199,28 @@ pub fn conventions_skill() -> String {
     acc_ui::conventions_skill()
 }
 
+/// The skill's name, for its directory in a skill store
+/// (`~/.agents/skills/<name>/SKILL.md`).
+#[uniffi::export]
+pub fn conventions_skill_name() -> String {
+    acc_ui::CONVENTIONS_SKILL.to_owned()
+}
+
+/// A session's system prompt with the conventions in it, for ACC's
+/// `LaunchRequest.systemPrompt`: the app's own instructions, then
+/// `conventions()`. Text that already holds them comes back unchanged.
+#[uniffi::export]
+pub fn with_conventions(system_prompt: Option<String>) -> String {
+    acc_ui::with_conventions(system_prompt.as_deref())
+}
+
+/// Whether a system prompt (a session's stored `spec.systemPrompt`) holds
+/// the conventions.
+#[uniffi::export]
+pub fn has_conventions(system_prompt: String) -> bool {
+    acc_ui::has_conventions(&system_prompt)
+}
+
 // Opt-in: agents writing specs themselves (acc-ui-agent).
 
 /// The `SKILL.md` of the `acc-ui-components` skill, which teaches the spec.
