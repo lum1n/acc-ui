@@ -195,7 +195,8 @@ impl SessionView {
                 self.seen(observed_at_ms, &mut ch);
             }
             Event::TitleChanged { title } => {
-                if !title.trim().is_empty() {
+                // Copilot's title is the whole first prompt: shorten it the same way.
+                if let Some(title) = first_line(&title).map(|l| shorten(&l, TITLE_CHARS)) {
                     self.header.title = Some(title);
                     self.titled = true;
                     ch.header = true;
