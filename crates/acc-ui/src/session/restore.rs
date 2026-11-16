@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::event::{AskKind, AskOption, Detail, Event, ItemKind, ItemStatus, Quota, Usage};
+use super::event::{AskKind, AskOption, Detail, Event, ItemKind, ItemStatus, Quota, Usage, image_refs};
 use super::{Changes, SessionView, TurnOutcome};
 
 /// One item of ACC's `Transcript` (`acc_core::transcript::Item`).
@@ -27,6 +27,23 @@ struct StoredItem {
     started_at_ms: Option<u64>,
     #[serde(default)]
     completed_at_ms: Option<u64>,
+    /// A user message's image refs. Newer ACC keeps them on the item; older
+    /// transcripts have them only in `native.images`.
+    #[serde(default)]
+    images: Option<Value>,
+    #[serde(default)]
+    native: Value,
+}
+
+impl StoredItem {
+    fn images(&self) -> Vec<super::event::ImageRef> {
+        let refs = image_refs(self.images.as_ref());
+        if refs.is_empty() {
+            image_refs(self.native.get("images"))
+        } else {
+            refs
+        }
+    }
 }
 
 /// A pending request in a session snapshot (`acc_core::session::Permission`).
@@ -92,13 +109,14 @@ impl SessionView {
 
         for item in items {
             let running = item.status == ItemStatus::Running;
+            let images = item.images();
             view.apply(Event::ItemStarted {
                 id: item.id.clone(),
                 kind: item.kind,
                 parent: item.parent,
                 detail: item.detail.clone(),
                 started_at_ms: item.started_at_ms,
-                images: Vec::new(),
+                images,
             });
             if !item.text.is_empty() {
                 view.apply(Event::ItemDelta {

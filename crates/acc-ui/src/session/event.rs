@@ -142,8 +142,12 @@ impl ImageRef {
 /// `native.images`, never failing the event: anything malformed is left out.
 fn native_images<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<ImageRef>, D::Error> {
     let native = Value::deserialize(d)?;
-    Ok(native
-        .get("images")
+    Ok(image_refs(native.get("images")))
+}
+
+/// Image refs from a JSON array, leaving out anything malformed or empty.
+pub(super) fn image_refs(images: Option<&Value>) -> Vec<ImageRef> {
+    images
         .and_then(Value::as_array)
         .map(|a| {
             a.iter()
@@ -151,7 +155,7 @@ fn native_images<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<ImageRef>
                 .filter(|r| *r != ImageRef::default())
                 .collect()
         })
-        .unwrap_or_default())
+        .unwrap_or_default()
 }
 
 /// What a session is doing (`acc_core::state::RunState`).
