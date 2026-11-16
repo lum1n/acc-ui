@@ -23,6 +23,58 @@ GPUI, Compose, the web), and send actions back. Anything that isn't visual (labe
 ordering, truncation, relative paths, what counts as failed, what changed) belongs in
 acc-ui, so every app gets the same behaviour while drawing it its own way.
 
+## Install
+
+acc-ui isn't on crates.io. Releases are tags, with prebuilt Apple binaries on
+[GitHub Releases](https://github.com/lum1n/acc-ui/releases); see
+[CHANGELOG.md](CHANGELOG.md) for what each one holds.
+
+Rust, as a dependency pinned to a tag:
+
+```toml
+[dependencies]
+acc-ui = { git = "https://github.com/lum1n/acc-ui", tag = "v0.1.0" }
+acc-ui-agent = { git = "https://github.com/lum1n/acc-ui", tag = "v0.1.0" } # opt-in
+acc-ui-ffi = { git = "https://github.com/lum1n/acc-ui", tag = "v0.1.0" }   # to link the bindings into your own Rust lib
+```
+
+Swift (iOS 16, macOS 13), with SwiftPM. The root `Package.swift` pulls the prebuilt
+`AccUIFFI.xcframework` from the release and builds the `AccUICore` wrapper over it:
+
+```swift
+.package(url: "https://github.com/lum1n/acc-ui", from: "0.1.0"),
+// in your target's dependencies:
+.product(name: "AccUICore", package: "acc-ui"),
+```
+
+Then `import AccUICore`. Apps that already link a Rust static library should depend
+on `acc-ui-ffi` from it and generate the bindings with `scripts/swift-bindings.sh`
+instead (see [Development](#development)).
+
+Kotlin: each release has `acc-ui-kotlin-<tag>.tar.gz`, the generated bindings
+(package `io.github.lum1n.accui`). Add `io/github/lum1n/accui/acc_ui_ffi.kt` to your
+sources, depend on [JNA](https://github.com/java-native-access/jna)
+(`net.java.dev.jna:jna`, `@aar` on Android), and ship `libacc_ui_ffi` built for your
+targets: `cargo build -p acc-ui-ffi --release` for the JVM (put it on
+`jna.library.path`), or [cargo-ndk](https://github.com/bbqsrc/cargo-ndk) for Android.
+Releases don't include native libraries for Kotlin yet.
+
+## Stability
+
+acc-ui is pre-1.0.
+
+- **The `acc-ui/1` spec** only grows: new optional fields and new node types. Every
+  normalised spec carries a plain-text `fallback`, so a renderer that doesn't know a
+  new node type can show that instead of failing. A change that would break an
+  existing renderer or spec becomes `acc-ui/2`, and the `v` field says which one a
+  spec is.
+- **The Rust and FFI API** follows semver as Cargo reads it before 1.0: a patch
+  release (0.1.x) doesn't break anything, a minor release (0.2.0) may, and the
+  changelog says how. The Swift and Kotlin bindings are generated from the Rust API
+  and move with it; take a library and its bindings from the same release.
+- **Fences**: only ` ```html render ` renders HTML. A plain ` ```html ` fence stays a
+  code block, so showing HTML source never turns into rendering it.
+
 ## The session model
 
 `SessionView` folds a session's ACC events into the regions a session screen shows,
@@ -129,7 +181,8 @@ from the same types.
 
 `parse_fence(info, body)` turns these fences into components: ` ```mermaid `,
 ` ```chart ` (CSV, or one chart node as JSON), ` ```acc-ui ` (a spec) and
-` ```html render `. A plain ` ```html ` stays code.
+` ```html render `. A plain ` ```html ` fence stays a code block; only ` ```html render `
+renders.
 
 ## Content: agent text and items as components
 
@@ -205,7 +258,6 @@ turn once it timed out.
 
 The spec schema (about 13.7 KB) is sent once, with `acc_ui_render`; `acc_ui_ask` takes
 the same spec and points there, so the tool list is about 15 KB.
-Each tool carries the full spec schema, about 13 KB per tool (26 KB for both).
 
 ## Development
 
@@ -213,6 +265,7 @@ Each tool carries the full spec schema, about 13 KB per tool (26 KB for both).
 cargo test                       # golden specs, snapshots, the MCP server under the local sh
 UPDATE_GOLDEN=1 cargo test       # rewrite golden files and snapshots; review the diff
 scripts/test-shells.sh           # the MCP server under dash+mawk and busybox too (Docker)
+cargo audit                      # advisories; the allow-list is .cargo/audit.toml
 cargo run -p acc-ui-agent --example dump -- conventions|conventions-skill|schema|skill|instructions|server|setup|tools
 ```
 
@@ -226,7 +279,17 @@ Bindings:
 scripts/swift-bindings.sh OUT_DIR    # Swift sources, for apps linking acc-ui-ffi into their own Rust lib
 scripts/kotlin-bindings.sh OUT_DIR
 scripts/build-xcframework.sh         # macOS: bindings/swift with AccUIFFI.xcframework + AccUICore
+scripts/ffi-smoke.sh swift|kotlin    # build and run a small program over the bindings (Kotlin: JNA_JAR=...)
+scripts/release.sh swift-sources     # regenerate Sources/AccUICore after an FFI change (CI checks it)
 ```
+
+Releases: bump `[workspace.package] version` in `Cargo.toml`, add the version's
+`CHANGELOG.md` section, merge, and push a `v*` tag from main. The release workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds the
+xcframework on macOS, rewrites the url and checksum in `Package.swift`
+(`scripts/release.sh package`), moves the tag onto that commit, and publishes the
+xcframework zip, the Kotlin sources and `SHA256SUMS` with the changelog section as
+notes.
 
 In Swift and Kotlin the session model is a `SessionView` object with the same methods
 (`applyJson`, `snapshot`, the region getters, `itemSpec`, `askSpec`, `answerDraft`)
