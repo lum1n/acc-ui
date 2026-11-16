@@ -233,6 +233,7 @@ ask() { # $1 request id token, $2 spec id token, $3 spec type
       fi
       # A killed waiter's sleep lives on for up to a second: keep it off
       # the FIFO and the client's pipes.
+      # shellcheck disable=SC2217
       sleep 1 </dev/null >/dev/null 2>&1 3>&-
       waited=$((waited + 1))
     done
