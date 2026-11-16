@@ -205,6 +205,7 @@ turn once it timed out.
 
 The spec schema (about 13.7 KB) is sent once, with `acc_ui_render`; `acc_ui_ask` takes
 the same spec and points there, so the tool list is about 15 KB.
+Each tool carries the full spec schema, about 13 KB per tool (26 KB for both).
 
 ## Development
 

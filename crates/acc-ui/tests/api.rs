@@ -170,3 +170,31 @@ fn csv_chart_kind_follows_x() {
         assert!(parse_fence("chart", bad).unwrap().spec.is_none(), "{bad:?}");
     }
 }
+
+#[test]
+fn csv_chart_options_and_cells() {
+    let chart_of = |body: &str| {
+        let out = parse_fence("chart", body).unwrap();
+        assert!(out.errors.is_empty(), "{:?}", out.errors);
+        nodes(out.spec.as_ref().unwrap())[0].clone()
+    };
+    // Option keys are case-insensitive, `stacked` accepts yes/true/1.
+    for (v, want) in [("yes", true), ("1", true), ("no", false)] {
+        let c = chart_of(&format!("Stacked: {v}\nKIND: Bar\nx,a\nq,1"));
+        assert_eq!(c["stacked"], want, "{v}");
+        assert_eq!(c["kind"], "bar");
+    }
+    // An explicit x label wins over the header's first column.
+    let c = chart_of("x: When\nday,a\nMon,1");
+    assert_eq!(c["x_label"], "When");
+    // Quoted fields keep commas and doubled quotes; `_` and spaces group digits.
+    let c = chart_of("\"the \"\"day\"\", ok\",\"s, 1\"\nMon,\"1 000\"\nTue,2_5");
+    assert_eq!(c["x_label"], "the \"day\", ok");
+    assert_eq!(c["series"][0]["name"], "s, 1");
+    assert_eq!(c["series"][0]["points"][0]["y"], 1000.0);
+    assert_eq!(c["series"][0]["points"][1]["y"], 25.0);
+    // A header with no data rows has nothing to draw.
+    let out = parse_fence("chart", "day,a,b").unwrap();
+    assert!(out.spec.is_none());
+    assert!(!out.errors.is_empty());
+}
