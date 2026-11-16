@@ -10,9 +10,19 @@
 //! - [`conventions`]: a few lines for the session's system prompt, every turn.
 //! - [`conventions_skill`]: a skill with the details and examples, loaded
 //!   only when the agent decides it's relevant.
+//!
+//! Wiring them into an ACC session: pass [`with_conventions`] of the app's
+//! own instructions as `LaunchRequest.system_prompt` (ACC appends it to the
+//! harness's system prompt on every harness and keeps it for relaunches),
+//! and install the skill as [`CONVENTIONS_SKILL`] with `acc-loadout`'s skill
+//! store, so every harness on the host can load it.
 
 /// GitHub alert kinds rendered as callouts: `> [!WARNING]`.
 pub const ALERT_KINDS: &[&str] = &["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"];
+
+/// The name of the skill [`conventions_skill`] holds, for its directory in
+/// a skill store (`~/.agents/skills/acc-ui-formatting/SKILL.md`).
+pub const CONVENTIONS_SKILL: &str = "acc-ui-formatting";
 
 /// About 90 tokens for the system prompt.
 pub fn conventions() -> String {
@@ -22,6 +32,29 @@ flows, a ```chart block of CSV (header row: the x column, then one column per se
 numbers, `> [!NOTE]` or `> [!WARNING]` for callouts, files as `path:line`, and PRs or commits \
 as full URLs. Keep ordinary prose as prose."
         .to_owned()
+}
+
+/// A session's system prompt with the conventions in it: the app's own
+/// instructions, a blank line, then [`conventions`]. Text that already
+/// holds them comes back unchanged (trimmed), so a relaunch that passes the
+/// stored prompt through again doesn't repeat them.
+pub fn with_conventions(system_prompt: Option<&str>) -> String {
+    let own = system_prompt.map(str::trim).unwrap_or_default();
+    if has_conventions(own) {
+        return own.to_owned();
+    }
+    let conventions = conventions();
+    if own.is_empty() {
+        conventions
+    } else {
+        format!("{own}\n\n{conventions}")
+    }
+}
+
+/// Whether a system prompt holds [`conventions`], as a session's stored
+/// `spec.system_prompt` tells after [`with_conventions`].
+pub fn has_conventions(system_prompt: &str) -> bool {
+    system_prompt.contains(&conventions())
 }
 
 /// The `SKILL.md` of the `acc-ui-formatting` skill.
@@ -110,3 +143,25 @@ Use them sparingly, for what the user must not miss.
 - PRs, issues and commits: the full URL (`https://github.com/owner/repo/pull/128`), not
   just `#128`.
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_conventions_appends_once() {
+        let c = conventions();
+        assert_eq!(with_conventions(None), c);
+        assert_eq!(with_conventions(Some("  ")), c);
+        let p = with_conventions(Some("Be brief.\n"));
+        assert_eq!(p, format!("Be brief.\n\n{c}"));
+        assert!(has_conventions(&p));
+        assert_eq!(with_conventions(Some(&p)), p);
+        assert!(!has_conventions("Be brief."));
+    }
+
+    #[test]
+    fn skill_name_matches_front_matter() {
+        assert!(conventions_skill().contains(&format!("\nname: {CONVENTIONS_SKILL}\n")));
+    }
+}
