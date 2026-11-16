@@ -246,7 +246,8 @@ cost:
 - The `acc_ui` MCP server is POSIX `sh` plus `awk`, so nothing is installed on hosts.
   - `acc_ui_render(spec)` returns at once.
   - `acc_ui_ask(spec)` waits for `~/.acc-ui/<session>/<spec id>/answer.json`, which
-    the client writes with `answer_script`.
+    the client writes with `answer_script`. A spec id asks once per session: asking
+    again with an id that waits or was answered is a tool error.
 - `setup_script()` installs the server under a content-hashed path, and
   `mcp_server(path, session)` gives the server for ACC's `LaunchRequest.mcp_servers`,
   which adds it to that one session next to the harness's own servers (Claude, Codex
@@ -290,7 +291,7 @@ Deliberate, for now:
 ```sh
 cargo test                       # golden specs, snapshots, the MCP server under the local sh
 UPDATE_GOLDEN=1 cargo test       # rewrite golden files and snapshots; review the diff
-scripts/test-shells.sh           # the MCP server under dash+mawk and busybox too (Docker)
+scripts/test-shells.sh           # the MCP server under dash+mawk, busybox and macOS-like bash 3.2 + BWK awk (Docker)
 cargo audit                      # advisories; the allow-list is .cargo/audit.toml
 cargo run -p acc-ui-agent --example dump -- conventions|conventions-skill|schema|skill|instructions|server|setup|tools
 ```

@@ -2,7 +2,8 @@
 //! exchange, answers written by `answer_script`, cancellation, timeouts.
 //!
 //! `ACC_UI_TEST_SH` picks the shell command (default `sh`);
-//! scripts/test-shells.sh runs these under dash+mawk and busybox too.
+//! scripts/test-shells.sh runs these under dash+mawk, busybox and a
+//! macOS-like bash 3.2 + one true awk too.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::io::{BufRead, BufReader, Write};
