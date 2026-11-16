@@ -1202,7 +1202,10 @@ impl SessionView {
 
     /// Every `acc_ui_render`/`acc_ui_ask` call in the session, in order.
     pub fn agent_calls(&self) -> Vec<AgentCall> {
-        acc_ui_agent::agent_calls(&self.lock()).into_iter().map(Into::into).collect()
+        acc_ui_agent::agent_calls(&self.lock())
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 
     /// The `acc_ui` call item `item_id` is; show its spec instead of
@@ -1277,11 +1280,15 @@ impl From<acc_ui_agent::AgentCall> for AgentCall {
 pub enum AgentAskState {
     Waiting,
     /// `values_json` is the submitted JSON object.
-    Answered { values_json: String },
+    Answered {
+        values_json: String,
+    },
     Dismissed,
     /// The call stopped waiting; an answer now goes as a prompt.
     TimedOut,
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 impl From<acc_ui_agent::AskState> for AgentAskState {
