@@ -1,0 +1,19 @@
+[
+  {
+    "kind": "user_message",
+    "nodes": [
+      "stack",
+      "markdown",
+      "image"
+    ],
+    "summary": ""
+  },
+  {
+    "kind": "agent_message",
+    "nodes": [
+      "stack",
+      "markdown"
+    ],
+    "summary": ""
+  }
+]

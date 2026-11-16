@@ -1,0 +1,39 @@
+[
+  {
+    "kind": "user_message",
+    "nodes": [
+      "markdown"
+    ],
+    "summary": ""
+  },
+  {
+    "kind": "reasoning",
+    "nodes": [
+      "disclosure"
+    ],
+    "summary": "Thought"
+  },
+  {
+    "kind": "reasoning",
+    "nodes": [
+      "disclosure"
+    ],
+    "summary": "Thought"
+  },
+  {
+    "kind": "command_execution",
+    "nodes": [
+      "disclosure",
+      "output"
+    ],
+    "summary": "$ rg --files -g '!**/.git/**'"
+  },
+  {
+    "kind": "agent_message",
+    "nodes": [
+      "stack",
+      "markdown"
+    ],
+    "summary": ""
+  }
+]

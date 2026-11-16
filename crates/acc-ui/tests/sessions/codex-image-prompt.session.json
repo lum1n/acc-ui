@@ -1,0 +1,127 @@
+{
+  "turn_ends": [
+    {
+      "turn": 0,
+      "state": {
+        "state": "done"
+      },
+      "now": [],
+      "asks": 0,
+      "files": [],
+      "commands": [],
+      "subagents": [],
+      "digest": "",
+      "outcome": "done",
+      "narrative": "Red fills the left half, and blue fills the right half."
+    }
+  ],
+  "final": {
+    "header": {
+      "harness": "codex",
+      "native_id": "01a1e682-b66f-7330-abe0-3f2ceabff7cc",
+      "model": "gpt-6-luna",
+      "title": "Which two colours does this image show, and how are they arranged? One…",
+      "state": {
+        "state": "done"
+      },
+      "state_message": null,
+      "usage": {
+        "input_tokens": 21588,
+        "output_tokens": 17,
+        "cache_read_tokens": 11520,
+        "cache_write_tokens": 0,
+        "context_used": 21605,
+        "context_window": 258400
+      },
+      "quota": {
+        "plan": "go",
+        "windows": [
+          {
+            "id": "primary",
+            "used_percent": 3.0,
+            "window_minutes": 43200,
+            "resets_at": 1795737107
+          }
+        ]
+      },
+      "root": null,
+      "exited": false,
+      "exit_code": null,
+      "turns": 1
+    },
+    "now": [],
+    "plan": null,
+    "asks": [],
+    "files": [],
+    "commands": [],
+    "subagents": [],
+    "turns": [
+      {
+        "index": 0,
+        "prompt": "Which two colours does this image show, and how are they arranged? One sentence, no tools.",
+        "prompt_images": [
+          {
+            "media_type": "image/png",
+            "bytes": 145,
+            "sha256": "cc4ecc7934027a14a5581e18633ed8237dd2d9782456ca0aa1965aed56b7b12e"
+          }
+        ],
+        "narrative": "Red fills the left half, and blue fills the right half.",
+        "narrative_item": "msg_0e551ebde080e91a016afb85d20cd087d2af0e7c141e19e91a",
+        "items": [
+          "01a1e682-ba0b-7a12-a996-8c0df504e740",
+          "msg_0e551ebde080e91a016afb85d20cd087d2af0e7c141e19e91a"
+        ],
+        "steps": 0,
+        "digest": {
+          "files_changed": 0,
+          "files_created": 0,
+          "files_deleted": 0,
+          "lines_added": 0,
+          "lines_removed": 0,
+          "files_read": 0,
+          "commands": 0,
+          "commands_failed": 0,
+          "subagents": 0,
+          "tools": 0,
+          "tests": null,
+          "parts": [],
+          "summary": ""
+        },
+        "outcome": "done",
+        "open": false,
+        "started_at_ms": 1794868688701,
+        "ended_at_ms": 1794868690415,
+        "diff": null
+      }
+    ],
+    "notices": [
+      "Exceeded skills context budget. All skill descriptions were removed and 693 additional skills were not included in the model-visible skills list."
+    ],
+    "items": [
+      {
+        "id": "01a1e682-ba0b-7a12-a996-8c0df504e740",
+        "kind": "user_message",
+        "parent": null,
+        "turn": 0,
+        "status": "completed",
+        "text": "Which two colours does this image show, and how are they arranged? One sentence, no tools.",
+        "images": [
+          {
+            "media_type": "image/png",
+            "bytes": 145,
+            "sha256": "cc4ecc7934027a14a5581e18633ed8237dd2d9782456ca0aa1965aed56b7b12e"
+          }
+        ]
+      },
+      {
+        "id": "msg_0e551ebde080e91a016afb85d20cd087d2af0e7c141e19e91a",
+        "kind": "agent_message",
+        "parent": null,
+        "turn": 0,
+        "status": "completed",
+        "text": "Red fills the left half, and blue fills the right half."
+      }
+    ]
+  }
+}

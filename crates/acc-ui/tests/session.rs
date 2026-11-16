@@ -215,7 +215,7 @@ fn transcript(lines: &str) -> Value {
 
 #[test]
 fn transcripts_restore_the_same_regions_as_live_events() {
-    for name in ["claude-fix-and-review", "codex-fix-and-review"] {
+    for name in common::recorded() {
         let lines = std::fs::read_to_string(common::dir("sessions").join(format!("{name}.ndjson"))).unwrap();
         let (live, _) = replay(&lines);
         let t = transcript(&lines);
@@ -261,8 +261,9 @@ fn transcripts_restore_the_same_regions_as_live_events() {
             if from == "snapshot" {
                 assert_eq!(restored.header().title.as_deref(), Some("Saved"));
                 assert_eq!(restored.header().root.as_deref(), Some("/work"));
+                let first = restored.files().iter().find(|f| f.path.starts_with("/work/"));
                 assert!(
-                    !restored.files()[0].display.contains('/'),
+                    first.is_none_or(|f| !f.display.starts_with('/')),
                     "{name}: shown relative to the root"
                 );
                 assert_eq!(restored.header().usage, live.header().usage);
