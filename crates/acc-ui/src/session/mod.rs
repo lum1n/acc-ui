@@ -646,7 +646,9 @@ impl SessionView {
         }
         let mut rec = command::recognise(&display, base);
         if item.status != ItemStatus::Running {
-            rec.read_output(output);
+            // Claude Code says this where a command printed nothing.
+            let silent = output.trim() == "(Bash completed with no output)";
+            rec.read_output(if silent { "" } else { output });
         }
         // Claude Code marks a Bash call that exits non-zero as an error, so
         // one that completed exited 0, unless a pipe or `;` hid the status.
