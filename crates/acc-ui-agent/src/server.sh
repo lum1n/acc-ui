@@ -19,6 +19,8 @@
 # turn, so replies from concurrent waiters never interleave.
 set -u
 umask 077
+LC_ALL=C
+export LC_ALL
 
 ROOT="${ACC_UI_DIR:-$HOME/.acc-ui}"
 SESSION="${ACC_UI_SESSION:-default}"
@@ -26,6 +28,9 @@ case $SESSION in '' | . | .. | *[!A-Za-z0-9._-]*) SESSION=default ;; esac
 DIR="$ROOT/$SESSION"
 TIMEOUT="${ACC_UI_ASK_TIMEOUT:-900}"
 case $TIMEOUT in '' | *[!0-9]*) TIMEOUT=900 ;; esac
+[ "${#TIMEOUT}" -le 9 ] || TIMEOUT=999999999
+NL='
+'
 RUN=""    # this process's state directory; empty when replies go straight out
 WRITER="" # pid of the writer process
 JOBS=""   # "<pid>:<spec id>" of each waiter
@@ -35,7 +40,8 @@ SEQ=0
 # Prints, one per line, the raw JSON tokens of: id, method, params.name,
 # params.arguments.spec.id, params.protocolVersion, params.requestId, and
 # the type of params.arguments.spec ("o" object, "s" string, "" absent).
-# Empty lines for absent ones; nothing at all when the line isn't JSON.
+# Empty lines for absent ones; nothing at all when the line isn't JSON. An
+# object or array id comes out as "{" or "[".
 SCAN='
 function path(   p, d) {
   p = ""
@@ -76,6 +82,7 @@ function value(tok,   p) {
       } else value(tok)
       continue
     }
+    if ((c == "{" || c == "[") && depth == 1 && key[1] == "id" && !want[1]) f_id = c
     if (c == "{") {
       if (depth == 3 && path() == "params/arguments/spec") f_spec = "o"
       depth++; kind[depth] = "o"; want[depth] = 1; key[depth] = ""; i++
@@ -183,6 +190,7 @@ ask() { # $1 request id token, $2 spec id token, $3 spec type
       if [ -s "$d/answer.json" ]; then
         answer=$(cat "$d/answer.json")
         case $answer in
+          *"$NL"*) text_result "$1" "@ERR_ANSWER@" ',"isError":true' ;;
           '{'*'}') reply "$1" "$answer" ;;
           *) text_result "$1" "@ERR_ANSWER@" ',"isError":true' ;;
         esac
@@ -235,7 +243,7 @@ trap stop INT TERM HUP PIPE
 
 while IFS= read -r line || [ -n "$line" ]; do
   case $line in *[![:space:]]*) ;; *) continue ;; esac
-  fields=$(printf '%s\n' "$line" | LC_ALL=C awk "$SCAN")
+  fields=$(printf '%s\n' "$line" | awk "$SCAN")
   if [ -z "$fields" ]; then
     fail null -32700 "Parse error"
     continue
@@ -251,6 +259,22 @@ while IFS= read -r line || [ -n "$line" ]; do
   } <<ACC_UI_FIELDS
 $fields
 ACC_UI_FIELDS
+  # The id goes back verbatim, so it must be a string, a number or null.
+  case $id in
+    '' | '"'*'"' | null) ;;
+    [-0-9]*) case $id in *[!0-9eE.+-]*) id=bad ;; esac ;;
+    *) id=bad ;;
+  esac
+  if [ "$id" = bad ]; then
+    fail null -32600 "Invalid Request"
+    continue
+  fi
+  case $method in
+    '"notifications/cancelled"') cancel "$req"; continue ;;
+    '"notifications/'*) continue ;;
+  esac
+  # Without an id it's a notification, which gets no reply.
+  [ -n "$id" ] || continue
   case $method in
     '"initialize"')
       case $pv in '"'*'"') ;; *) pv='"2025-06-18"' ;; esac
@@ -265,9 +289,7 @@ ACC_UI_FIELDS
         *) fail "$id" -32602 "Unknown tool" ;;
       esac
       ;;
-    '"notifications/cancelled"') cancel "$req" ;;
-    '"notifications/'*) ;;
-    *) [ -n "$id" ] && fail "$id" -32601 "Method not found" ;;
+    *) fail "$id" -32601 "Method not found" ;;
   esac
 done
 stop drain

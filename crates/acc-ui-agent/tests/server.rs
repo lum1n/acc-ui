@@ -377,6 +377,48 @@ fn spec_ids_cant_be_reused() {
     assert!(s.recv(Duration::from_millis(1500)).is_none());
 }
 
+/// Requests whose id isn't a string, number or null get an Invalid Request
+/// error; requests without an id are notifications and get no reply.
+#[test]
+fn bad_and_missing_ids() {
+    let dir = temp_dir("ids");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    for bad in [
+        r#"{"jsonrpc":"2.0","id":{"a":1},"method":"ping"}"#,
+        r#"{"jsonrpc":"2.0","id":[1],"method":"ping"}"#,
+        r#"{"jsonrpc":"2.0","id":true,"method":"ping"}"#,
+    ] {
+        s.send(bad);
+        let r = s.recv(Duration::from_secs(5)).expect("no reply");
+        assert_eq!(r["error"]["code"], -32600, "{bad}: {r}");
+        assert_eq!(r["id"], Value::Null, "{bad}: {r}");
+    }
+    s.send(r#"{"jsonrpc":"2.0","method":"ping"}"#);
+    s.send(r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"acc_ui_render","arguments":{"spec":{}}}}"#);
+    let r = s.call(json!({"jsonrpc":"2.0","id":-1.5,"method":"ping"}));
+    assert_eq!(r["result"], json!({}));
+}
+
+/// An answer file that isn't one JSON object on one line is reported, not
+/// passed on.
+#[test]
+fn malformed_answer_is_an_error() {
+    let dir = temp_dir("malformed");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    s.send(&tool_call(json!(30), "acc_ui_ask", json!({ "spec": badge_spec("m") })).to_string());
+    std::thread::sleep(Duration::from_millis(300));
+    let d = dir.join("s1/m");
+    std::fs::write(d.join(".tmp"), "{\"content\":[],\n\"x\":1}\n").unwrap();
+    std::fs::rename(d.join(".tmp"), d.join("answer.json")).unwrap();
+    let r = s.recv(Duration::from_secs(10)).expect("no reply");
+    assert_eq!(r["id"], 30);
+    assert_eq!(r["result"]["isError"], true, "{r}");
+}
+
 fn wait_exit(s: &mut Server, secs: u64) {
     let deadline = Instant::now() + Duration::from_secs(secs);
     while s.child.try_wait().unwrap().is_none() {
