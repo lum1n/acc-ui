@@ -1,0 +1,8 @@
+# cargo-audit settings, read by `cargo audit` locally and in CI.
+[advisories]
+ignore = [
+  # basic-toml is unmaintained. It comes in only through uniffi_bindgen ->
+  # askama (the bindings generator), not the shipped library, and there is
+  # no maintained release to move to from here. Drop this once uniffi does.
+  "RUSTSEC-2026-0374",
+]
