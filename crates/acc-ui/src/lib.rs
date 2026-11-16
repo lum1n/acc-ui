@@ -9,6 +9,8 @@
 //! - [`spec`]: the components, as an `acc-ui/1` tree.
 //! - [`normalize`]: validates a tree and flattens it into what renderers
 //!   take, with limits and a plain-text fallback.
+//! - [`session`]: the session model. ACC events in; header, now, plan,
+//!   needs-you, files, commands, subagents and turns out.
 //! - [`fence`]: fences that hold components (` ```mermaid `, ` ```chart `).
 //! - [`conventions`]: optional text that nudges agents toward markdown
 //!   that renders best.
@@ -20,10 +22,12 @@ pub mod conventions;
 pub mod fence;
 pub mod normalize;
 pub mod schema;
+pub mod session;
 pub mod spec;
 
 pub use conventions::{conventions, conventions_skill};
 pub use fence::{is_component_fence, parse_fence};
 pub use normalize::{Normalized, normalize, normalize_value, valid_id};
 pub use schema::schema;
+pub use session::{Changes, SessionView, Snapshot};
 pub use spec::VERSION;
