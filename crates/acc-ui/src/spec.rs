@@ -85,6 +85,24 @@ pub enum Node {
     Markdown(Markdown),
     /// Self-contained HTML in a sandbox: no network, no navigation.
     Html(Html),
+    /// Source code or other preformatted text.
+    Code(Code),
+    /// A summary line whose children show when the user opens it.
+    Disclosure(Disclosure),
+
+    // Made by acc-ui from what the agent did; kept out of the schema
+    // agents see.
+    /// A command's output.
+    #[schemars(skip)]
+    Output(Output),
+    /// Changes to files.
+    #[schemars(skip)]
+    Diff(Diff),
+    /// An approval or question from the harness, answered through ACC.
+    /// Only acc-ui makes these: specs from agents can't, so an agent can't
+    /// dress up a prompt that answers a real request.
+    #[schemars(skip)]
+    Request(Request),
 
     // Inputs
     /// A button that runs an action when tapped.
@@ -115,10 +133,18 @@ impl Node {
         "image",
         "markdown",
         "html",
+        "code",
+        "disclosure",
+        "output",
+        "diff",
+        "request",
         "button",
         "chips",
         "form",
     ];
+
+    /// Types made only by acc-ui, left out of what agents are told.
+    pub const INTERNAL_TYPES: &[&str] = &["output", "diff", "request"];
 
     /// Child nodes of a container.
     pub fn children(&self) -> &[Node] {
@@ -126,14 +152,17 @@ impl Node {
             Node::Stack(n) => &n.children,
             Node::Row(n) => &n.children,
             Node::Card(n) => &n.children,
+            Node::Disclosure(n) => &n.children,
             _ => &[],
         }
     }
 
     /// Whether the node takes input from the user.
     pub fn is_input(&self) -> bool {
-        matches!(self, Node::Button(_) | Node::Chips(_) | Node::Form(_))
-            || matches!(self, Node::Card(c) if c.action.is_some())
+        matches!(
+            self,
+            Node::Button(_) | Node::Chips(_) | Node::Form(_) | Node::Request(_)
+        ) || matches!(self, Node::Card(c) if c.action.is_some())
     }
 }
 
@@ -212,7 +241,8 @@ pub struct KvItem {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Table {
     pub columns: Vec<Column>,
-    /// One array of cells per row, in column order.
+    /// One array of cells per row, in column order. Cells may hold inline
+    /// markdown (`code`, **bold**, links).
     pub rows: Vec<Vec<String>>,
 }
 
@@ -401,6 +431,129 @@ pub struct Markdown {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Code {
+    pub text: String,
+    /// The fence's language (`rust`, `sh`, `diff`), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Disclosure {
+    /// The line shown while it's closed.
+    pub summary: String,
+    #[serde(default)]
+    pub children: Vec<Node>,
+    /// Starts open. Defaults to closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Output {
+    /// The output's last lines, as the terminal showed them.
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Lines before `text` that were left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_lines: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Diff {
+    pub files: Vec<DiffFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DiffFile {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
+    pub change: FileChange,
+    #[serde(default)]
+    pub added: u32,
+    #[serde(default)]
+    pub removed: u32,
+    #[serde(default)]
+    pub hunks: Vec<DiffHunk>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FileChange {
+    Add,
+    Update,
+    Delete,
+    Rename,
+}
+
+/// A region of a diff. Line numbers are 1-based; 0 means unknown (an edit
+/// given as old and new snippets, without its place in the file).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DiffHunk {
+    #[serde(default)]
+    pub old_start: u32,
+    #[serde(default)]
+    pub new_start: u32,
+    pub lines: Vec<DiffLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DiffLine {
+    pub tag: LineTag,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LineTag {
+    Context,
+    Add,
+    Remove,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Request {
+    /// ACC's id for the request.
+    pub request_id: String,
+    pub kind: RequestKind,
+    pub title: String,
+    /// What it's about: the command, the files and their changes, or the
+    /// tool and its target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub options: Vec<RequestOption>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestKind {
+    Permission,
+    Question,
+    Auth,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RequestOption {
+    pub label: String,
+    /// Runs [`Action::Answer`] with this request and option.
+    pub action: Action,
+    /// Allows or rejects, once or always, when the harness says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<OptionRole>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OptionRole {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Html {
     /// A full document or a fragment. Inline all CSS, JS and images: the
     /// sandbox fetches nothing and opens links only after the user confirms.
@@ -528,4 +681,7 @@ pub enum Action {
     },
     /// Copy `text` to the clipboard.
     Copy { text: String },
+    /// Answer a harness request through ACC. Only acc-ui makes these.
+    #[schemars(skip)]
+    Answer { request_id: String, option_id: String },
 }

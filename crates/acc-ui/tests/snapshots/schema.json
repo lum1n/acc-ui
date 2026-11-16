@@ -271,6 +271,34 @@
           "description": "Self-contained HTML in a sandbox: no network, no navigation."
         },
         {
+          "$ref": "#/$defs/Code",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "code"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "description": "Source code or other preformatted text."
+        },
+        {
+          "$ref": "#/$defs/Disclosure",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "disclosure"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "description": "A summary line whose children show when the user opens it."
+        },
+        {
           "$ref": "#/$defs/Button",
           "type": "object",
           "properties": {
@@ -565,7 +593,7 @@
               "type": "string"
             }
           },
-          "description": "One array of cells per row, in column order."
+          "description": "One array of cells per row, in column order. Cells may hold inline\nmarkdown (`code`, **bold**, links)."
         }
       },
       "required": [
@@ -887,6 +915,44 @@
       },
       "required": [
         "html"
+      ]
+    },
+    "Code": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string",
+          "description": "The fence's language (`rust`, `sh`, `diff`), when known."
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "Disclosure": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "The line shown while it's closed."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "default": []
+        },
+        "open": {
+          "type": "boolean",
+          "description": "Starts open. Defaults to closed."
+        }
+      },
+      "required": [
+        "summary"
       ]
     },
     "ButtonStyle": {

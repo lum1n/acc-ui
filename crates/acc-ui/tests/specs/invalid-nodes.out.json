@@ -59,7 +59,7 @@
   },
   "errors": [
     "/root/action: \"javascript:alert(1)\" is not an http(s) URL; dropped",
-    "/root/children/0: unknown type \"gauge\"; expected one of stack, row, card, kv, table, badge, progress, checklist, callout, file, pr, commit, chart, mermaid, image, markdown, html, button, chips, form",
+    "/root/children/0: unknown type \"gauge\"; expected one of stack, row, card, kv, table, badge, progress, checklist, callout, file, pr, commit, chart, mermaid, image, markdown, html, code, disclosure, button, chips, form",
     "/root/children/1: missing \"type\"",
     "/root/children/2: a node must be an object",
     "/root/children/3: missing field `text`",

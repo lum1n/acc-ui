@@ -50,7 +50,8 @@ fn conventions_skill_examples_render() {
     assert_eq!(n, 2);
 }
 
-/// The schema's node types match `Node::TYPES`, which normalize checks.
+/// The schema's node types match `Node::TYPES`, which normalize checks,
+/// less the ones only acc-ui makes.
 #[test]
 fn schema_node_types_match() {
     let schema = acc_ui::schema();
@@ -60,5 +61,15 @@ fn schema_node_types_match() {
         .iter()
         .map(|v| v["properties"]["type"]["const"].as_str().unwrap())
         .collect();
-    assert_eq!(types, acc_ui::spec::Node::TYPES);
+    let agent_types: Vec<&str> = acc_ui::spec::Node::TYPES
+        .iter()
+        .filter(|t| !acc_ui::spec::Node::INTERNAL_TYPES.contains(t))
+        .copied()
+        .collect();
+    assert_eq!(types, agent_types);
+    let s = schema.to_string();
+    assert!(
+        !s.contains("\"answer\"") && !s.contains("request_id"),
+        "answer/request leaked into the schema"
+    );
 }

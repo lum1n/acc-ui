@@ -79,8 +79,16 @@ The components are defined in [`crates/acc-ui/src/spec.rs`](crates/acc-ui/src/sp
 - data: `kv`, `table`
 - status: `badge`, `progress`, `checklist`, `callout`
 - links: `file`, `pr`, `commit`
-- content: `chart`, `mermaid`, `image`, `markdown`, `html`
+- content: `chart`, `mermaid`, `image`, `markdown`, `html`, `code`, `disclosure`
 - inputs: `button`, `chips`, `form`, with actions
+- made only by acc-ui: `output` (a command's output), `diff` (file changes), `request`
+  (a harness approval or question) and the `answer` action. These are left out of the
+  schema agents see, and `normalize` drops `request` and `answer` from any spec that
+  didn't come from acc-ui, so an agent can't dress up a prompt that answers a real
+  request.
+
+The nodes are semantic (a table, a checklist, a warning callout, a diff); how they look is
+up to the app.
 
 The JSON Schema ([`schema.json`](crates/acc-ui/tests/snapshots/schema.json)) is generated
 from the same types.
@@ -108,6 +116,23 @@ from the same types.
 `parse_fence(info, body)` turns these fences into components: ` ```mermaid `,
 ` ```chart ` (CSV, or one chart node as JSON), ` ```acc-ui ` (a spec) and
 ` ```html render `. A plain ` ```html ` stays code.
+
+## Content: agent text and items as components
+
+- `markdown_blocks(text)`: an agent message as a `stack` of blocks. GFM tables become
+  `table` (cells keep inline markdown), all-task lists `checklist`, `> [!NOTE]`-style
+  alerts `callout`, closed component fences their component, other fences `code`, and
+  the rest stays `markdown` as written. A component fence still streaming stays `code`
+  until it closes, so re-parse the whole message on each delta.
+- `detect_links(text, root)`: files (`[label](path)`, `path:line`, absolute paths under
+  the root), GitHub PRs and commits, and other URLs, as byte ranges with what they
+  point at.
+- `SessionView::item_spec(id)`: any item as a spec, for a transcript view or an expanded
+  step: messages as blocks; reasoning, commands (with `output`), file changes (with
+  `diff`), tool calls and subagent runs as a `disclosure` whose summary says what
+  happened (`$ python3 -m unittest`, `Edited inventory.py +4 −3`).
+- `SessionView::ask_spec(ask)`: a pending approval or question as a `request` whose
+  options carry `answer` actions.
 
 ## Conventions: optional, plain markdown
 

@@ -34,6 +34,10 @@ pub const MAX_HTML_BYTES: usize = 128 * 1024;
 pub const MAX_TABLE_ROWS: usize = 500;
 /// Most points in one chart, over all series.
 pub const MAX_CHART_POINTS: usize = 5000;
+/// Largest `output` text, in bytes; earlier output is dropped.
+pub const MAX_OUTPUT_BYTES: usize = 64 * 1024;
+/// Most lines in one `diff`, over all its files; later lines are dropped.
+pub const MAX_DIFF_LINES: usize = 5000;
 /// Most fields in one form, options in one select, chips in one row.
 pub const MAX_CHOICES: usize = 50;
 /// Longest fallback text generated from the nodes.
@@ -84,6 +88,16 @@ pub fn normalize(json: &str) -> Normalized {
 /// Normalises a parsed spec. A bare node (an object with `type` but no
 /// `root`) is taken as the root of a spec without id.
 pub fn normalize_value(spec: Value) -> Normalized {
+    normalize_with(spec, false)
+}
+
+/// Normalises a spec acc-ui made itself, which may hold `request` nodes and
+/// `answer` actions. Specs from agents never come through here.
+pub(crate) fn normalize_trusted(spec: Value) -> Normalized {
+    normalize_with(spec, true)
+}
+
+fn normalize_with(spec: Value, trusted: bool) -> Normalized {
     let size = spec.to_string().len();
     if size > MAX_SPEC_BYTES {
         return Normalized::failed(format!("spec is {size} bytes; the limit is {MAX_SPEC_BYTES}"));
@@ -105,7 +119,10 @@ pub fn normalize_value(spec: Value) -> Normalized {
         return Normalized::failed("/root: missing");
     };
 
-    let mut w = Walker::default();
+    let mut w = Walker {
+        trusted,
+        ..Walker::default()
+    };
     let root_index = w.node(root, 0, "/root".to_owned());
     if root_index.is_none() {
         w.errors.push("/root: no renderable node left".to_owned());
@@ -196,6 +213,10 @@ struct Walker {
     errors: Vec<String>,
     interactive: bool,
     over_limit: bool,
+    /// The spec is acc-ui's own: requests and answers are allowed.
+    trusted: bool,
+    /// Diff lines kept so far, against [`MAX_DIFF_LINES`].
+    diff_lines: usize,
 }
 
 impl Walker {
@@ -230,7 +251,12 @@ impl Walker {
         if !Node::TYPES.contains(&ty.as_str()) {
             self.errors.push(format!(
                 "{path}: unknown type {ty:?}; expected one of {}",
-                Node::TYPES.join(", ")
+                Node::TYPES
+                    .iter()
+                    .filter(|t| !Node::INTERNAL_TYPES.contains(t))
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
             return None;
         }
@@ -260,7 +286,10 @@ impl Walker {
         let index = self.nodes.len();
         self.nodes.push(Value::Null);
         self.describe(&node, depth);
-        let container = matches!(node, Node::Stack(_) | Node::Row(_) | Node::Card(_));
+        let container = matches!(
+            node,
+            Node::Stack(_) | Node::Row(_) | Node::Card(_) | Node::Disclosure(_)
+        );
         if !container && !children.is_empty() {
             self.errors
                 .push(format!("{path}/children: a {ty} has no children; ignored"));
@@ -293,7 +322,7 @@ impl Walker {
         match node {
             Node::Card(c) => {
                 if let Some(a) = &c.action
-                    && let Err(e) = check_action(a)
+                    && let Err(e) = check_action(self.trusted, a)
                 {
                     self.errors.push(format!("{path}/action: {e}; dropped"));
                     c.action = None;
@@ -364,12 +393,12 @@ impl Walker {
                 if b.label.trim().is_empty() {
                     return Err("a button needs a label".into());
                 }
-                check_action(&b.action)?;
+                check_action(self.trusted, &b.action)?;
             }
             Node::Chips(c) => {
                 let mut i = 0;
                 c.options.retain(|chip| {
-                    let r = check_action(&chip.action);
+                    let r = check_action(self.trusted, &chip.action);
                     if let Err(e) = &r {
                         self.errors
                             .push(format!("{path}/options/{i}/action: {e}; dropped"));
@@ -380,6 +409,54 @@ impl Walker {
                 c.options.truncate(MAX_CHOICES);
                 if c.options.is_empty() {
                     return Err("chips need at least one option".into());
+                }
+            }
+            Node::Code(c) if c.text.is_empty() => return Err("empty code".into()),
+            Node::Disclosure(d) if d.summary.trim().is_empty() => {
+                return Err("a disclosure needs a summary".into());
+            }
+            Node::Output(o) => {
+                if o.text.len() > MAX_OUTPUT_BYTES {
+                    let mut cut = o.text.len() - MAX_OUTPUT_BYTES;
+                    while !o.text.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    let dropped = o.text[..cut].lines().count();
+                    o.text.drain(..cut);
+                    let omitted = o.omitted_lines.unwrap_or(0);
+                    o.omitted_lines =
+                        Some(omitted.saturating_add(u32::try_from(dropped).unwrap_or(u32::MAX)));
+                }
+            }
+            Node::Diff(d) => {
+                if d.files.is_empty() {
+                    return Err("a diff needs files".into());
+                }
+                for f in &mut d.files {
+                    for h in &mut f.hunks {
+                        let room = MAX_DIFF_LINES.saturating_sub(self.diff_lines);
+                        if h.lines.len() > room {
+                            h.lines.truncate(room);
+                            if !self.over_limit {
+                                self.errors.push(format!(
+                                    "{path}: more than {MAX_DIFF_LINES} diff lines; the rest are dropped"
+                                ));
+                            }
+                        }
+                        self.diff_lines += h.lines.len();
+                    }
+                    f.hunks.retain(|h| !h.lines.is_empty());
+                }
+            }
+            Node::Request(r) => {
+                if !self.trusted {
+                    return Err("only acc-ui makes requests".into());
+                }
+                let id = r.request_id.clone();
+                r.options
+                    .retain(|o| matches!(&o.action, Action::Answer { request_id, .. } if *request_id == id));
+                if r.options.is_empty() {
+                    return Err("a request needs options that answer it".into());
                 }
             }
             Node::Form(f) => {
@@ -502,6 +579,30 @@ impl Walker {
             Node::Image(i) => push(format!("[image: {}]", i.alt.as_deref().unwrap_or(&i.src))),
             Node::Markdown(m) => push(m.text.clone()),
             Node::Html(_) => push("[HTML]".to_owned()),
+            Node::Code(c) => c.text.lines().for_each(|l| push(format!("    {l}"))),
+            Node::Disclosure(d) => push(format!("▸ {}", d.summary)),
+            Node::Output(o) => {
+                let mut lines: Vec<&str> = o.text.lines().collect();
+                let start = lines.len().saturating_sub(10);
+                lines.drain(..start);
+                lines.into_iter().for_each(|l| push(format!("    {l}")));
+                if let Some(c) = o.exit_code {
+                    push(format!("(exit {c})"));
+                }
+            }
+            Node::Diff(d) => d.files.iter().for_each(|f| {
+                push(format!("{} +{} −{}", f.path, f.added, f.removed));
+            }),
+            Node::Request(r) => {
+                push(r.title.clone());
+                push(
+                    r.options
+                        .iter()
+                        .map(|o| format!("[{}]", o.label))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
             Node::Button(b) => push(format!("[{}]", b.label)),
             Node::Chips(c) => push(
                 c.options
@@ -554,8 +655,9 @@ fn valid_field_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
 
-fn check_action(a: &Action) -> Result<(), String> {
+fn check_action(trusted: bool, a: &Action) -> Result<(), String> {
     match a {
+        Action::Answer { .. } if !trusted => Err("only acc-ui answers requests".to_owned()),
         Action::OpenUrl { url } if !is_web_url(url) => Err(format!("{url:?} is not an http(s) URL")),
         Action::Prompt { text } | Action::Copy { text } if text.trim().is_empty() => {
             Err("empty text".to_owned())

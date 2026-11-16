@@ -82,6 +82,24 @@ impl ActivityKind {
             Self::Working => "Working",
         }
     }
+
+    /// The English verb for something finished, for summaries.
+    pub fn past_label(self) -> &'static str {
+        match self {
+            Self::Thinking => "Thought",
+            Self::Writing => "Wrote",
+            Self::Running => "Ran",
+            Self::Reading => "Read",
+            Self::Searching => "Searched",
+            Self::Editing => "Edited",
+            Self::Fetching => "Fetched",
+            Self::Planning => "Planned",
+            Self::CallingTool => "Called",
+            Self::Delegating => "Delegated",
+            Self::WaitingForSubagents => "Waited for subagents",
+            Self::Working => "Worked",
+        }
+    }
 }
 
 /// The agent's to-do list, with its progress.

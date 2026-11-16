@@ -41,14 +41,18 @@ fn server_script() {
     );
 }
 
-/// Every node type and field kind appears in the skill's catalog.
+/// Every node type agents may write, and every field kind, appears in the
+/// skill's catalog; the ones only acc-ui makes don't.
 #[test]
 fn skill_lists_every_component() {
     let skill = acc_ui_agent::skill_markdown();
     for ty in acc_ui::spec::Node::TYPES {
-        assert!(
+        let internal = acc_ui::spec::Node::INTERNAL_TYPES.contains(ty);
+        assert_eq!(
             skill.contains(&format!("**`{ty}`**")),
-            "{ty} missing from the skill"
+            !internal,
+            "{ty} in the skill: expected {}",
+            !internal
         );
     }
     for kind in ["text", "textarea", "number", "toggle", "select", "date", "slider"] {

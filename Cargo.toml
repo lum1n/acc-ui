@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 acc-ui = { path = "crates/acc-ui" }
 acc-ui-agent = { path = "crates/acc-ui-agent" }
+pulldown-cmark = { version = "0.13", default-features = false }
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
