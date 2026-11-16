@@ -10,6 +10,13 @@
 #
 # Environment: ACC_UI_SESSION (answers' directory, default "default"),
 # ACC_UI_DIR (default ~/.acc-ui), ACC_UI_ASK_TIMEOUT (seconds, default 900).
+#
+# State. <session>/<spec id>/ is made by the one ask that uses the id; it
+# holds the call's request id, "waiting" while the call waits, "cancelled"
+# once the client cancels it, and the client's answer.json. run~/<pid>.<n>/
+# is this process's own: each reply is written there as a file whose name
+# goes down a FIFO, and one writer process copies the files to stdout in
+# turn, so replies from concurrent waiters never interleave.
 set -u
 umask 077
 
@@ -19,7 +26,11 @@ case $SESSION in '' | . | .. | *[!A-Za-z0-9._-]*) SESSION=default ;; esac
 DIR="$ROOT/$SESSION"
 TIMEOUT="${ACC_UI_ASK_TIMEOUT:-900}"
 case $TIMEOUT in '' | *[!0-9]*) TIMEOUT=900 ;; esac
-WAITERS=""
+RUN=""    # this process's state directory; empty when replies go straight out
+WRITER="" # pid of the writer process
+JOBS=""   # "<pid>:<spec id>" of each waiter
+TAG=m.    # reply file prefix: m. in the main loop, w.<spec id>. in a waiter
+SEQ=0
 
 # Prints, one per line, the raw JSON tokens of: id, method, params.name,
 # params.arguments.spec.id, params.protocolVersion, params.requestId, and
@@ -86,12 +97,57 @@ function value(tok,   p) {
   print f_id; print f_method; print f_name; print f_spec_id; print f_pv; print f_req; print f_spec
 }'
 
-send() { printf '%s\n' "$1"; }
+send() {
+  if [ -n "$RUN" ]; then
+    SEQ=$((SEQ + 1))
+    if printf '%s\n' "$1" >"$RUN/$TAG$SEQ" 2>/dev/null; then
+      printf '%s\n' "$TAG$SEQ" >&3
+      return
+    fi
+  fi
+  printf '%s\n' "$1"
+}
 reply() { send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"result\":$2}"; }
 fail() { send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"error\":{\"code\":$2,\"message\":\"$3\"}}"; }
 text_result() { reply "$1" "{\"content\":[{\"type\":\"text\",\"text\":\"$2\"}]${3:-}}"; }
 
 TOOLS='@TOOLS@'
+
+# Starts the writer, which reads reply file names from the FIFO and copies
+# each file to stdout whole. A name is short, so writing one to the FIFO is
+# atomic. Without a FIFO, replies go straight to stdout.
+start_writer() {
+  base="$ROOT/run~"
+  mkdir -p "$base" 2>/dev/null || return 0
+  n=0
+  until mkdir "$base/$$.$n" 2>/dev/null; do
+    n=$((n + 1))
+    [ "$n" -lt 100 ] || return 0
+  done
+  r="$base/$$.$n"
+  if ! mkfifo "$r/out" 2>/dev/null; then
+    rm -rf "$r"
+    return 0
+  fi
+  (
+    while IFS= read -r f; do
+      cat "$r/$f"
+      rm -f "$r/$f"
+    done
+  ) <"$r/out" &
+  WRITER=$!
+  exec 3>"$r/out"
+  RUN=$r
+}
+
+# Forgets the waiters that have finished.
+prune() {
+  keep=""
+  for j in $JOBS; do
+    if [ -f "$DIR/${j#*:}/waiting" ]; then keep="$keep $j"; fi
+  done
+  JOBS=$keep
+}
 
 ask() { # $1 request id token, $2 spec id token, $3 spec type
   if [ "$3" != o ]; then
@@ -111,48 +167,66 @@ ask() { # $1 request id token, $2 spec id token, $3 spec type
     text_result "$1" "@ERR_DIR@" ',"isError":true'
     return
   fi
-  rm -f "$d/answer.json"
+  rm -f "$d/answer.json" "$d/cancelled"
   printf '%s\n' "$1" >"$d/request"
+  : >"$d/waiting"
+  prune
   (
+    TAG="w.$sid."
     waited=0
-    while [ "$waited" -lt "$TIMEOUT" ]; do
+    while [ ! -f "$d/cancelled" ]; do
       if [ -s "$d/answer.json" ]; then
         answer=$(cat "$d/answer.json")
-        rm -f "$d/pid"
         case $answer in
           '{'*'}') reply "$1" "$answer" ;;
           *) text_result "$1" "@ERR_ANSWER@" ',"isError":true' ;;
         esac
-        exit 0
+        break
       fi
-      sleep 1
+      if [ "$waited" -ge "$TIMEOUT" ]; then
+        text_result "$1" "@TIMED_OUT@"
+        break
+      fi
+      # A killed waiter's sleep lives on for up to a second: keep it off
+      # the FIFO and the client's pipes.
+      sleep 1 </dev/null >/dev/null 2>&1 3>&-
       waited=$((waited + 1))
     done
-    rm -f "$d/pid"
-    text_result "$1" "@TIMED_OUT@"
+    rm -f "$d/waiting"
   ) &
-  printf '%s\n' "$!" >"$d/pid"
-  WAITERS="$WAITERS $!"
+  JOBS="$JOBS $!:$sid"
 }
 
 cancel() { # $1 request id token
   [ -n "$1" ] || return 0
-  for r in "$DIR"/*/request; do
-    [ -f "$r" ] || continue
-    if [ "$(cat "$r")" = "$1" ]; then
-      p="${r%/request}/pid"
-      [ -f "$p" ] && kill "$(cat "$p")" 2>/dev/null
-      rm -f "$p"
+  for j in $JOBS; do
+    d="$DIR/${j#*:}"
+    if [ -f "$d/waiting" ] && [ "$(cat "$d/request" 2>/dev/null)" = "$1" ]; then
+      : >"$d/cancelled"
     fi
   done
 }
 
-stop() {
-  # shellcheck disable=SC2086
-  [ -n "$WAITERS" ] && kill $WAITERS 2>/dev/null
+stop() { # $1 "drain" to send the replies already made
+  trap '' INT TERM HUP PIPE
+  for j in $JOBS; do
+    d="$DIR/${j#*:}"
+    if [ -f "$d/waiting" ]; then
+      kill "${j%%:*}" 2>/dev/null
+      rm -f "$d/waiting"
+    fi
+  done
+  if [ -n "$RUN" ]; then
+    exec 3>&-
+    [ "${1:-}" = drain ] || kill "$WRITER" 2>/dev/null
+    wait "$WRITER" 2>/dev/null
+    rm -rf "$RUN"
+  fi
   exit 0
 }
-trap stop INT TERM HUP
+
+start_writer
+trap stop INT TERM HUP PIPE
 
 while IFS= read -r line || [ -n "$line" ]; do
   case $line in *[![:space:]]*) ;; *) continue ;; esac
@@ -191,4 +265,4 @@ ACC_UI_FIELDS
     *) [ -n "$id" ] && fail "$id" -32601 "Method not found" ;;
   esac
 done
-stop
+stop drain
