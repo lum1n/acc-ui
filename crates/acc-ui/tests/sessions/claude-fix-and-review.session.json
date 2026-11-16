@@ -37,7 +37,7 @@
         ]
       ],
       "subagents": [],
-      "digest": "Edited 3 files (+20 −3) · ran 1 command",
+      "digest": "Edited 3 files (+20 −3) · ran 1 command · 4 tests passed",
       "outcome": "done",
       "narrative": "All four tests pass under `python3 -m unittest`, including the new restock test."
     },
@@ -54,14 +54,14 @@
           "update",
           5,
           3,
-          1
+          2
         ],
         [
           "/work/test_inventory.py",
           "update",
           6,
           0,
-          1
+          2
         ],
         [
           "/work/README.md",
@@ -88,7 +88,7 @@
           3
         ]
       ],
-      "digest": "Ran 1 command · 1 subagent",
+      "digest": "Read 2 files · ran 1 command · 1 subagent",
       "outcome": "done",
       "narrative": "I didn't change any files. The subagent read the code without running it and rat"
     }
@@ -145,7 +145,7 @@
         "change": "update",
         "added": 5,
         "removed": 3,
-        "reads": 1,
+        "reads": 2,
         "edits": [
           {
             "item_id": "toolu_014Nj1RXMhi7MzG9FSzSRWCu",
@@ -248,7 +248,8 @@
           }
         ],
         "turns": [
-          0
+          0,
+          1
         ]
       },
       {
@@ -258,7 +259,7 @@
         "change": "update",
         "added": 6,
         "removed": 0,
-        "reads": 1,
+        "reads": 2,
         "edits": [
           {
             "item_id": "toolu_01EMV8Pp4rydDrVh5biVqDpc",
@@ -307,7 +308,8 @@
           }
         ],
         "turns": [
-          0
+          0,
+          1
         ]
       },
       {
@@ -389,7 +391,17 @@
         "cwd": null,
         "status": "completed",
         "exit_code": null,
-        "outcome": "unknown",
+        "outcome": "succeeded",
+        "outcome_inferred": true,
+        "kind": "test",
+        "tool": "unittest",
+        "reads": [],
+        "tests": {
+          "passed": 4,
+          "failed": 0,
+          "skipped": 0
+        },
+        "diagnostics": null,
         "output_tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK",
         "output_lines": 5,
         "started_at_ms": null,
@@ -406,6 +418,15 @@
         "status": "completed",
         "exit_code": null,
         "outcome": "unknown",
+        "outcome_inferred": false,
+        "kind": "read",
+        "tool": "cat",
+        "reads": [
+          "/work/inventory.py",
+          "/work/test_inventory.py"
+        ],
+        "tests": null,
+        "diagnostics": null,
         "output_tail": "    12\t\n    13\t\n    14\tdef restock(items, name, amount):\n    15\t    \"\"\"Add amount to the named item's quantity; raise KeyError if unknown.\"\"\"\n    16\t    for i in items:\n    17\t        if i[\"name\"] == name:\n    18\t            i[\"quantity\"] += amount\n    19\t            return items\n    20\t    raise KeyError(name)\n     1\timport unittest\n     2\t\n     3\tfrom inventory import low_stock, restock, total_value\n     4\t\n     5\tITEMS = [\n     6\t    {\"name\": \"bolt\", \"price\": 0.5, \"quantity\": 100},\n     7\t    {\"name\": \"nut\", \"price\": 0.25, \"quantity\": 5},\n     8\t    {\"name\": \"gear\", \"price\": 12.0, \"quantity\": 2},\n     9\t]\n    10\t\n    11\t\n    12\tclass InventoryTest(unittest.TestCase):\n    13\t    def test_total_value(self):\n    14\t        self.assertAlmostEqual(total_value(ITEMS), 50 + 1.25 + 24)\n    15\t\n    16\t    def test_low_stock(self):\n    17\t        self.assertEqual(low_stock(ITEMS), [\"gear\"])\n    18\t\n    19\t    def test_restock_known(self):\n    20\t        items = [dict(i) for i in ITEMS]\n    21\t        result = restock(items, \"gear\", 10)\n    22\t        self.assertEqual(result[2][\"quantity\"], 12)\n    23\t        self.assertEqual(result[0][\"quantity\"], 100)\n    24\t\n    25\t    def test_restock_unknown(self):\n    26\t        with self.assertRaises(KeyError):\n    27\t            restock([dict(i) for i in ITEMS], \"washer\", 3)\n    28\t\n    29\t\n    30\tif __name__ == \"__main__\":\n    31\t    unittest.main()",
         "output_lines": 51,
         "started_at_ms": null,
@@ -464,6 +485,11 @@
           "commands_failed": 0,
           "subagents": 0,
           "tools": 0,
+          "tests": {
+            "passed": 4,
+            "failed": 0,
+            "skipped": 0
+          },
           "parts": [
             {
               "kind": "edited",
@@ -477,9 +503,15 @@
               "kind": "ran",
               "commands": 1,
               "failed": 0
+            },
+            {
+              "kind": "tests",
+              "passed": 4,
+              "failed": 0,
+              "skipped": 0
             }
           ],
-          "summary": "Edited 3 files (+20 −3) · ran 1 command"
+          "summary": "Edited 3 files (+20 −3) · ran 1 command · 4 tests passed"
         },
         "outcome": "done",
         "open": false,
@@ -504,12 +536,17 @@
           "files_deleted": 0,
           "lines_added": 0,
           "lines_removed": 0,
-          "files_read": 0,
+          "files_read": 2,
           "commands": 1,
           "commands_failed": 0,
           "subagents": 1,
           "tools": 0,
+          "tests": null,
           "parts": [
+            {
+              "kind": "read",
+              "files": 2
+            },
             {
               "kind": "ran",
               "commands": 1,
@@ -520,7 +557,7 @@
               "count": 1
             }
           ],
-          "summary": "Ran 1 command · 1 subagent"
+          "summary": "Read 2 files · ran 1 command · 1 subagent"
         },
         "outcome": "done",
         "open": false,

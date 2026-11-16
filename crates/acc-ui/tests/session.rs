@@ -273,7 +273,7 @@ fn restoring_keeps_a_running_turn_open() {
     ]);
     let view = SessionView::from_transcript(&items.to_string()).unwrap();
     assert!(view.turns()[0].open);
-    assert_eq!(view.now()[0].kind, ActivityKind::Running);
+    assert_eq!(view.now()[0].kind, ActivityKind::Building);
     assert_eq!(view.commands()[0].output_tail, "building");
 }
 
@@ -613,7 +613,7 @@ fn now_shows_running_items_and_coordination() {
         now,
         [
             (ActivityKind::Thinking, String::new()),
-            (ActivityKind::Running, "cargo test".into()),
+            (ActivityKind::Testing, "cargo test".into()),
             (ActivityKind::Editing, "src/a.rs".into()),
             (ActivityKind::WaitingForSubagents, String::new()),
             (ActivityKind::Searching, "TODO".into()),
@@ -742,4 +742,96 @@ fn restored_asks_keep_their_questions() {
     });
     let view = SessionView::from_transcript(&snapshot.to_string()).unwrap();
     assert_eq!(view.asks()[0].questions[0].options[0].label, "SQLite");
+}
+
+#[test]
+fn recognised_commands_feed_outcomes_files_and_digests() {
+    use acc_ui::session::{CommandKind, TestCounts};
+    let mut view = SessionView::new();
+    view.set_root("/w");
+    let start = |id: &str, command: &str| {
+        json!({"type":"item_started","id":id,"kind":"command_execution",
+               "detail":{"type":"command","tool":"Bash","command":command,"output":""}})
+    };
+    let done = |id: &str, command: &str, output: &str, exit: Value| {
+        json!({"type":"item_completed","id":id,"status":"completed",
+               "detail":{"type":"command","tool":"Bash","command":command,"output":output,"exit_code":exit}})
+    };
+    let piped = "cargo test 2>&1 | tail -3";
+    let failing = "test result: FAILED. 3 passed; 1 failed; 0 ignored\nerror: test failed";
+    apply(
+        &mut view,
+        &[
+            json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}}),
+            start("t1", piped),
+        ],
+    );
+    assert_eq!(view.now()[0].kind, ActivityKind::Testing);
+    apply(
+        &mut view,
+        &[
+            // `tail` exited 0; the tests failed.
+            done("t1", piped, failing, json!(0)),
+            start("r", "cat -n src/a.rs src/b.rs"),
+        ],
+    );
+    assert_eq!(view.now()[0].kind, ActivityKind::Reading);
+    assert_eq!(view.now()[0].target, "src/a.rs, src/b.rs");
+    let read = done("r", "cat -n src/a.rs src/b.rs", "1\tfn a() {}", Value::Null);
+    apply(
+        &mut view,
+        &[
+            read.clone(),
+            read,
+            start("t2", "pytest -q"),
+            // Claude reports no exit code; the summary says it passed.
+            done("t2", "pytest -q", "....\n4 passed in 0.02s", Value::Null),
+            start("x", "python3 build.py && cat out.txt"),
+            done("x", "python3 build.py && cat out.txt", "", Value::Null),
+        ],
+    );
+    let t1 = view.command("t1").unwrap();
+    assert_eq!(
+        (t1.kind, t1.outcome, t1.outcome_inferred),
+        (CommandKind::Test, CommandOutcome::Failed, true)
+    );
+    assert_eq!(t1.tool.as_deref(), Some("cargo test"));
+    assert_eq!(
+        t1.tests,
+        Some(TestCounts {
+            passed: 3,
+            failed: 1,
+            skipped: 0
+        })
+    );
+    let t2 = view.command("t2").unwrap();
+    assert_eq!(
+        (t2.outcome, t2.outcome_inferred),
+        (CommandOutcome::Succeeded, true)
+    );
+    let r = view.command("r").unwrap();
+    assert_eq!((r.kind, r.outcome), (CommandKind::Read, CommandOutcome::Unknown));
+    assert_eq!(r.reads, ["/w/src/a.rs", "/w/src/b.rs"]);
+    // Completed twice, read once.
+    assert_eq!(view.file("/w/src/a.rs").unwrap().reads, 1);
+    assert_eq!(view.file("/w/src/a.rs").unwrap().display, "src/a.rs");
+    let x = view.command("x").unwrap();
+    assert_eq!((x.kind, x.reads.len()), (CommandKind::Other, 0));
+    assert!(view.file("/w/out.txt").is_none());
+
+    let d = &view.turns()[0].digest;
+    assert_eq!((d.commands, d.commands_failed, d.files_read), (4, 1, 2));
+    // The last test run's counts.
+    assert_eq!(
+        d.tests,
+        Some(TestCounts {
+            passed: 4,
+            failed: 0,
+            skipped: 0
+        })
+    );
+    assert_eq!(
+        d.summary(),
+        "Read 2 files · ran 4 commands, 1 failed · 4 tests passed"
+    );
 }
