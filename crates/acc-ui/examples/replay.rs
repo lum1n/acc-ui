@@ -8,12 +8,14 @@
 //!
 //! Without `--html` the frames go to stdout as NDJSON. With it they're
 //! embedded in a self-contained viewer (`examples/replay/viewer.html`) that
-//! plays the session back region by region.
+//! plays the session back region by region. The agent's own `acc_ui`
+//! calls come from `acc-ui-agent` (a dev-dependency only).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::io::Write as _;
 
 use acc_ui::SessionView;
+use acc_ui_agent::{AgentCall, AskState, UiCallKind, agent_calls};
 use serde_json::{Map, Value, json};
 
 const VIEWER: &str = include_str!("replay/viewer.html");
@@ -41,6 +43,7 @@ fn main() {
     }
     let mut frames: Vec<Value> = Vec::new();
     let mut merged = 0;
+    let mut calls_shown = json!([]);
     for (i, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
@@ -80,6 +83,13 @@ fn main() {
         }
         if !ch.turns.is_empty() {
             set.insert("turns".into(), json!(view.turns()));
+        }
+        if !ch.items.is_empty() {
+            let calls = Value::Array(agent_calls(&view).iter().map(call_json).collect());
+            if calls != calls_shown {
+                set.insert("agent_calls".into(), calls.clone());
+                calls_shown = calls;
+            }
         }
         if set.is_empty() {
             continue;
@@ -123,4 +133,31 @@ fn main() {
             }
         }
     }
+}
+
+/// An agent's `acc_ui` call for the viewer: its normalised spec and, for an
+/// ask, where the answer stands.
+fn call_json(c: &AgentCall) -> Value {
+    let (ask, answer) = match &c.call.ask {
+        None => (Value::Null, Value::Null),
+        Some(AskState::Waiting) => (json!("waiting"), Value::Null),
+        Some(AskState::Answered(s)) => (json!("answered"), json!(s.values)),
+        Some(AskState::Dismissed) => (json!("dismissed"), Value::Null),
+        Some(AskState::TimedOut) => (json!("timed_out"), Value::Null),
+        Some(AskState::Failed(why)) => (json!("failed"), json!(why)),
+    };
+    let kind = match c.call.kind {
+        UiCallKind::Render => "render",
+        UiCallKind::Ask => "ask",
+    };
+    json!({
+        "item_id": c.item_id,
+        "turn": c.turn,
+        "kind": kind,
+        "running": c.running,
+        "ask": ask,
+        "answer": answer,
+        "spec": c.call.spec.spec,
+        "errors": c.call.spec.errors,
+    })
 }

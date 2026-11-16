@@ -137,7 +137,8 @@ cargo run -p acc-ui --example replay -- crates/acc-ui/tests/sessions/claude-fix-
 Plays a recorded session back through `SessionView` in a throwaway web viewer. Each frame
 carries only the regions its event changed. Space plays and pauses, the arrow keys step,
 and `?frame=N` or `?frame=end` opens at a frame. Without `--html`, the frames go to stdout
-as NDJSON. The viewer is a development tool for looking at the session model on real
+as NDJSON. Frames also carry the agent's own `acc_ui` calls with their specs (the
+example alone uses `acc-ui-agent`). The viewer is a development tool for looking at the session model on real
 sessions. Its look is not part of acc-ui.
 
 ## The render model

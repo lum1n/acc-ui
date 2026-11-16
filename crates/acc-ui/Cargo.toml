@@ -16,3 +16,7 @@ sha2.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Only the replay example, to show agent calls; the library stays agent-free.
+acc-ui-agent.workspace = true
