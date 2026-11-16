@@ -417,7 +417,8 @@ pub struct Mermaid {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Image {
-    /// An `https:` URL, a `data:image/...` URL, or an absolute path on the host.
+    /// An `https:` URL, a `data:image/...` URL, an absolute path on the
+    /// host, or `sha256:<hex>` of an image the app holds (one the user sent).
     pub src: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt: Option<String>,

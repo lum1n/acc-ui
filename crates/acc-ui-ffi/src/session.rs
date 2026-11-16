@@ -881,12 +881,43 @@ impl From<s::Digest> for Digest {
     }
 }
 
+/// An image a message carried, by reference: the bytes aren't in ACC's
+/// events. Show one the app sent by `sha256`, or read `path` on the host.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ImageRef {
+    pub media_type: Option<String>,
+    pub bytes: Option<u64>,
+    /// Lowercase hex SHA-256 of the bytes.
+    pub sha256: Option<String>,
+    pub path: Option<String>,
+    /// For an image node: the path, else `sha256:<hex>`.
+    pub src: Option<String>,
+}
+
+impl From<s::ImageRef> for ImageRef {
+    fn from(i: s::ImageRef) -> Self {
+        Self {
+            src: i.src(),
+            media_type: i.media_type,
+            bytes: i.bytes,
+            sha256: i.sha256,
+            path: i.path,
+        }
+    }
+}
+
+fn images(v: Vec<s::ImageRef>) -> Vec<ImageRef> {
+    v.into_iter().map(Into::into).collect()
+}
+
 /// One turn: a prompt and everything up to its end.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Turn {
     pub index: u32,
-    /// `None` for turns the harness started itself.
+    /// `None` for turns the harness started itself; empty for a prompt
+    /// that was only images.
     pub prompt: Option<String>,
+    pub prompt_images: Vec<ImageRef>,
     /// What the agent said last in the turn.
     pub narrative: Option<String>,
     pub narrative_item: Option<String>,
@@ -909,6 +940,7 @@ impl From<s::Turn> for Turn {
             duration_ms: t.duration_ms(),
             index: n(t.index),
             prompt: t.prompt,
+            prompt_images: images(t.prompt_images),
             narrative: t.narrative,
             narrative_item: t.narrative_item,
             items: t.items,
@@ -935,6 +967,8 @@ pub struct Item {
     /// Message or reasoning text.
     pub text: String,
     pub detail: ItemDetail,
+    /// A prompt's images, or the image a tool viewed or generated.
+    pub images: Vec<ImageRef>,
     pub started_at_ms: Option<u64>,
     pub completed_at_ms: Option<u64>,
 }
@@ -949,6 +983,7 @@ impl From<s::ItemView> for Item {
             status: i.status.into(),
             text: i.text,
             detail: i.detail.into(),
+            images: images(i.images),
             started_at_ms: i.started_at_ms,
             completed_at_ms: i.completed_at_ms,
         }

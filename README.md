@@ -38,7 +38,7 @@ instead of a top-to-bottom transcript
 | `files()` | every file read or changed: net change, +/-, each edit's hunks, the turns that touched it |
 | `commands()` | each command unwrapped from its `zsh -lc '...'`, with a one-line headline, exit code, outcome (succeeded, failed, or unknown when the harness gives no exit code) and an output tail. Commands are recognised conservatively: a kind (test, build, lint, format, install, git, search, list, read, or other when any part is unclear) and tool (`cargo test`, `pytest`), test counts and compiler/linter errors from the tool's own summary, and files shown with `cat`/`head`/`sed -n`, which land in `files()`. Failed tests behind `\| tail` fail the command, and a passing summary decides it when there is no exit code. Claude Code reports no exit codes but marks non-zero exits as failed, so a completed Claude command that is one simple command (no pipe, `;`, `&&`, `||`) succeeded. `outcome_inferred` marks outcomes decided either way |
 | `subagents()` | each run of another agent: task, status, report, and how much it did |
-| `turns()` | each prompt with the agent's answer (its last message), a digest as structured parts (one chip each) and as a line (`Edited 3 files (+19 −3) · ran 3 commands · 12 tests passed`), outcome, duration, the items it led to and how many fold away, and the turn's diff where the harness sends one |
+| `turns()` | each prompt (and its images) with the agent's answer (its last message), a digest as structured parts (one chip each) and as a line (`Edited 3 files (+19 −3) · ran 3 commands · 12 tests passed`), outcome, duration, the items it led to and how many fold away, and the turn's diff where the harness sends one |
 
 ```rust
 let mut view = SessionView::new();
@@ -58,6 +58,15 @@ let view = SessionView::from_transcript(&saved)?; // an ACC session snapshot or 
 `ask(request_id)` fetch just what changed. `from_transcript` rebuilds the same state from what ACC saved, for
 history and for sessions picked up without their events. acc-ui reads ACC's events with its own tolerant types, so unknown
 events and fields are ignored rather than failing.
+
+Images: ACC keeps image bytes out of its events and sends references instead (media
+type, size, SHA-256, or a path on the host), in a user message's `native.images`.
+acc-ui puts them on the item (`images`) and the turn (`prompt_images`), drops ACC's
+`[image]` stand-in for an image-only prompt, and gives Codex's `imageView` and
+`imageGeneration` items the image's path. In item specs they become `image` nodes whose
+`src` is the path or `sha256:<hex>`: the app shows an image the user sent from its own
+copy, matched by hash. With an ACC that doesn't send references, the `[image]` text
+stays. A restored transcript has no references; that waits for a media store in ACC.
 
 The recorded sessions in `crates/acc-ui/tests/sessions` (Claude Code and Codex fixing
 a bug, then delegating a review to a subagent) replay into golden

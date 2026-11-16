@@ -8,8 +8,8 @@ use serde::ser::{SerializeStruct, Serializer};
 use super::ask::Question;
 use super::command::{CommandKind, Diagnostics, TestCounts};
 use super::event::{
-    AskKind, AskOption, Detail, FileChangeKind, Hunk, ItemKind, ItemStatus, PlanEntry, PlanStatus, Quota,
-    RunState, Usage,
+    AskKind, AskOption, Detail, FileChangeKind, Hunk, ImageRef, ItemKind, ItemStatus, PlanEntry, PlanStatus,
+    Quota, RunState, Usage,
 };
 
 /// Who, what and how much: the top of a session screen.
@@ -324,8 +324,11 @@ pub struct Turn {
     pub index: usize,
     /// The user's prompt; `None` for turns the harness started itself (a
     /// background subagent reporting back) or that began before acc-ui saw
-    /// them.
+    /// them. Empty for a prompt that was only images.
     pub prompt: Option<String>,
+    /// Images sent with the prompt.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub prompt_images: Vec<ImageRef>,
     /// What the agent said last in this turn: its answer once the turn
     /// ends, its latest message while it runs. Earlier messages and
     /// reasoning are in `items`, for apps that fold them away.
@@ -564,6 +567,10 @@ pub struct ItemView {
     pub detail: Detail,
     #[serde(skip)]
     pub output: String,
+    /// Images it carries: a prompt's attachments, an image a tool viewed
+    /// or generated.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]

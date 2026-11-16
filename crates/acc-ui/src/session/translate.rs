@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::event::{AskKind, Detail, FileChangeKind, ItemKind, ItemStatus, LineTag, OptionKind};
+use super::event::{AskKind, Detail, FileChangeKind, ImageRef, ItemKind, ItemStatus, LineTag, OptionKind};
 use super::{Ask, SessionView, display_path, first_line, unwrap_shell};
 use crate::blocks::blocks;
 use crate::normalize::{Normalized, normalize_trusted, normalize_value, valid_id};
@@ -20,7 +20,16 @@ impl SessionView {
         let item = self.item(id)?;
         let root = self.header.root.as_deref();
         let node = match (&item.detail, item.kind) {
-            (Detail::Text, ItemKind::UserMessage) => json!({ "type": "markdown", "text": item.text }),
+            (Detail::Text, ItemKind::UserMessage) if item.images.is_empty() => {
+                json!({ "type": "markdown", "text": item.text })
+            }
+            (Detail::Text, ItemKind::UserMessage) => {
+                let mut children = image_nodes(&item.images);
+                if !item.text.is_empty() {
+                    children.insert(0, json!({ "type": "markdown", "text": item.text }));
+                }
+                json!({ "type": "stack", "children": children })
+            }
             (Detail::Text, ItemKind::Reasoning) => json!({
                 "type": "disclosure",
                 "summary": if item.status == ItemStatus::Running { "Thinking" } else { "Thought" },
@@ -89,6 +98,7 @@ impl SessionView {
                     None => "Tool call".to_owned(),
                 };
                 let children = match output.as_deref().map(str::trim_end) {
+                    _ if !item.images.is_empty() => image_nodes(&item.images),
                     Some(o) if !o.is_empty() => vec![json!({ "type": "code", "text": tail_chars(o, 8000) })],
                     _ => Vec::new(),
                 };
@@ -174,6 +184,22 @@ impl SessionView {
         }
         normalize_trusted(json!({ "root": request }))
     }
+}
+
+/// An `image` node per ref that has a `src`.
+fn image_nodes(images: &[ImageRef]) -> Vec<Value> {
+    images
+        .iter()
+        .filter_map(|i| {
+            let src = i.src()?;
+            let alt = i
+                .path
+                .as_deref()
+                .and_then(|p| p.rsplit('/').next())
+                .unwrap_or("Image");
+            Some(json!({ "type": "image", "src": src, "alt": alt }))
+        })
+        .collect()
 }
 
 fn disclosure(summary: String, children: Vec<Value>) -> Value {
