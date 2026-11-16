@@ -1192,8 +1192,10 @@ impl SessionView {
 
     /// An item as a spec to render: a message's markdown as blocks, a
     /// command with its output, a diff, a folded reasoning or tool call.
+    /// An agent's own `acc_ui` call shows the spec it carries; answer an
+    /// ask's inputs through `agent_call(item_id)`.
     pub fn item_spec(&self, id: String) -> Option<NormalizedSpec> {
-        self.lock().item_spec(&id).map(Into::into)
+        acc_ui_agent::item_spec(&self.lock(), &id).map(Into::into)
     }
 
     /// A waiting ask as a spec: a `request` node whose options answer it.
@@ -1213,8 +1215,8 @@ impl SessionView {
             .collect()
     }
 
-    /// The `acc_ui` call item `item_id` is; show its spec instead of
-    /// `item_spec`.
+    /// The `acc_ui` call item `item_id` is, with where an ask's answer
+    /// stands. `item_spec` already shows its spec.
     pub fn agent_call(&self, item_id: String) -> Option<AgentCall> {
         acc_ui_agent::agent_call(&self.lock(), &item_id).map(Into::into)
     }

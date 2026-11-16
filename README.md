@@ -254,10 +254,12 @@ cost:
   `parse_submit` handle answers sent as a user message:
   `<acc-ui-submit id="deploy">{"choice":"rollback"}</acc-ui-submit>`.
 
-In a `SessionView` the calls are ordinary tool items. `agent_calls(view)`,
-`agent_call(view, item_id)` and `open_agent_asks(view)` (methods of `SessionView` in
-the bindings) find them with their spec and, for asks, where the answer stands. Show
-`AgentCall.spec` in place of `item_spec`. `AgentCall::answer(session, values)` picks
+In a `SessionView` the calls are ordinary tool items: core doesn't know the agent
+layer. `agent_calls(view)`, `agent_call(view, item_id)` and `open_agent_asks(view)`
+(methods of `SessionView` in the bindings) find them with their spec and, for asks,
+where the answer stands. `acc_ui_agent::item_spec(view, id)` is `item_spec` with a
+call's own spec (normalised as untrusted) in place of the raw tool call; the bindings'
+`itemSpec` is this one. `AgentCall::answer(session, values)` picks
 the delivery: the answer script while the call waits, or a submit prompt for the next
 turn once it timed out.
 

@@ -24,6 +24,9 @@ impl SessionView {
     /// changes, tool calls and subagent runs as a `disclosure` whose summary
     /// says what happened and whose children show it. `None` for items
     /// with nothing to show: reasoning without text, unknown details.
+    ///
+    /// An agent's own `acc_ui_render`/`acc_ui_ask` call is an ordinary tool
+    /// call here; `acc_ui_agent::item_spec` shows the spec it carries.
     pub fn item_spec(&self, id: &str) -> Option<Normalized> {
         let item = self.item(id)?;
         let root = self.header.root.as_deref();

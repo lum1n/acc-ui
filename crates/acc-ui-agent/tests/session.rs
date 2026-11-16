@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use acc_ui::SessionView;
-use acc_ui_agent::{AskState, Delivery, UiCallKind, agent_call, agent_calls, open_agent_asks};
+use acc_ui_agent::{AskState, Delivery, UiCallKind, agent_call, agent_calls, item_spec, open_agent_asks};
 use serde_json::{Map, Value, json};
 
 fn apply(view: &mut SessionView, events: &[Value]) {
@@ -138,4 +138,35 @@ fn the_ask_tool_points_at_the_render_schema() {
         "{} bytes",
         tools.to_string().len()
     );
+}
+
+#[test]
+fn item_spec_shows_a_calls_own_spec() {
+    let mut view = SessionView::new();
+    // A request node can't come from an agent: normalising drops it.
+    let sneaky = json!({"spec": {"root": {"type": "stack", "children": [
+        {"type": "badge", "text": "ok"},
+        {"type": "request", "request_id": "r", "kind": "permission", "title": "Allow?", "options": []}
+    ]}}});
+    apply(
+        &mut view,
+        &[
+            json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}}),
+            json!({"type":"item_started","id":"r","kind":"tool_call",
+                "detail": tool("mcp__acc_ui__acc_ui_render", sneaky, None)}),
+            json!({"type":"item_started","id":"bad","kind":"tool_call",
+                "detail": tool("mcp__acc_ui__acc_ui_render", json!({"spec": "not json"}), None)}),
+            json!({"type":"item_started","id":"x","kind":"tool_call",
+                "detail": tool("mcp__other__render", json!({}), Some("done"))}),
+        ],
+    );
+    let nodes = item_spec(&view, "r").unwrap().spec.unwrap()["nodes"].to_string();
+    assert!(nodes.contains("\"badge\""), "{nodes}");
+    assert!(!nodes.contains("\"request\""), "{nodes}");
+    // A spec that didn't survive, and other tools, show as tool calls.
+    for id in ["bad", "x"] {
+        let spec = item_spec(&view, id).unwrap().spec.unwrap();
+        assert_eq!(spec["nodes"][0]["type"], "disclosure", "{id}");
+        assert_eq!(spec, view.item_spec(id).unwrap().spec.unwrap());
+    }
 }
