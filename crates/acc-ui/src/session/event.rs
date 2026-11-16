@@ -27,6 +27,9 @@ pub enum Event {
         state: RunState,
         #[serde(default)]
         message: Option<String>,
+        /// When ACC observed it, ms since the Unix epoch.
+        #[serde(default)]
+        observed_at_ms: Option<u64>,
     },
     ItemStarted {
         id: String,

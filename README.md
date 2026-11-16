@@ -34,17 +34,20 @@ instead of a top-to-bottom transcript
 | `files()` | every file read or changed: net change, +/-, each edit's hunks, the turns that touched it |
 | `commands()` | each command unwrapped from its `zsh -lc '...'`, with status, exit code and an output tail |
 | `subagents()` | each run of another agent: task, status, report, and how much it did |
-| `turns()` | each prompt and the items it led to, with the turn's diff where the harness sends one |
+| `turns()` | each prompt with the agent's answer (its last message), a digest (`Edited 3 files (+19 −3) · ran 3 commands`), outcome, duration, the items it led to, and the turn's diff where the harness sends one |
 
 ```rust
 let mut view = SessionView::new();
 view.set_root("/home/me/project");          // the client knows the session's cwd
 for line in events { let changes = view.apply_json(line)?; /* redraw what changed */ }
 view.answered(request_id);                  // after answering an ask
+
+let view = SessionView::from_transcript(&saved)?; // an ACC session snapshot or transcript
 ```
 
 `apply_json` takes ACC's event JSON (a line of `acc run --json`) and returns the
-`Changes` it made. acc-ui reads ACC's events with its own tolerant types, so unknown
+`Changes` it made. `from_transcript` rebuilds the same state from what ACC saved, for
+history and for sessions picked up without their events. acc-ui reads ACC's events with its own tolerant types, so unknown
 events and fields are ignored rather than failing.
 
 The recorded sessions in `crates/acc-ui/tests/sessions` (Claude Code and Codex fixing
