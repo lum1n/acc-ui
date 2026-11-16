@@ -91,12 +91,10 @@
         "narrative_item": "msg_053d092c730dc3a4016afb855306f487d297901aa900a1d8f5",
         "items": [
           "01a1e680-a746-7bd2-a10e-54012e781de3",
-          "rs_053d092c730dc3a4016afb854bc5bc87d2bd95a4ae55f9495f",
-          "rs_053d092c730dc3a4016afb8551122c87d292812ba53bed3174",
           "exec-7d1fb0f7-90f5-4d20-9614-33a29183a542",
           "msg_053d092c730dc3a4016afb855306f487d297901aa900a1d8f5"
         ],
-        "steps": 3,
+        "steps": 1,
         "digest": {
           "files_changed": 0,
           "files_created": 0,

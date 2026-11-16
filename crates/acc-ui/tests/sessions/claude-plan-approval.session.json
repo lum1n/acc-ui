@@ -222,14 +222,13 @@
           "d3be0e54-b879-4da9-9364-56f5897ba22c",
           "toolu_01YHp79ymAs2y3i5eMuDTNbT",
           "toolu_01Vkbesmf68PqNS4CDv81Wuc",
-          "msg_011Ch7QThiwpA4FhjXPSL93X:0",
           "toolu_01XowZbjLbAGgnuHuC6sfD6W",
           "toolu_018Xo2eo7nJhxg1u6ZZSoqY5",
           "toolu_0127zCjFwBci2DabaQ39XYXW",
           "toolu_018XfQYrxUhtXWizPnrfajND",
           "msg_011Ch7QU7oYi9ZTZyohdGbMN:0"
         ],
-        "steps": 7,
+        "steps": 6,
         "digest": {
           "files_changed": 2,
           "files_created": 1,

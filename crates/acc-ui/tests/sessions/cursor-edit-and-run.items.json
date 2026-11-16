@@ -19,6 +19,7 @@
     "kind": "tool_call",
     "nodes": [
       "disclosure",
+      "file",
       "code"
     ],
     "summary": "Read Read calc.py"

@@ -7,20 +7,6 @@
     "summary": ""
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "command_execution",
     "nodes": [
       "disclosure",

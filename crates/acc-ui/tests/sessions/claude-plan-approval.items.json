@@ -10,6 +10,7 @@
     "kind": "tool_call",
     "nodes": [
       "disclosure",
+      "file",
       "code"
     ],
     "summary": "Read greet.py"
@@ -20,13 +21,6 @@
       "disclosure"
     ],
     "summary": "Worked select:ExitPlanMode"
-  },
-  {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
   },
   {
     "kind": "file_change",

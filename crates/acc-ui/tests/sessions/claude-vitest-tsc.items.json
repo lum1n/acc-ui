@@ -26,6 +26,7 @@
     "kind": "tool_call",
     "nodes": [
       "disclosure",
+      "file",
       "code"
     ],
     "summary": "Read src/cart.ts"
@@ -34,6 +35,7 @@
     "kind": "tool_call",
     "nodes": [
       "disclosure",
+      "file",
       "code"
     ],
     "summary": "Read src/cart.test.ts"
