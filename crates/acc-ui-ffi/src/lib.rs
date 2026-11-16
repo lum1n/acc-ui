@@ -153,7 +153,7 @@ pub fn recognize_tool(name: String, input_json: String, output: Option<String>) 
     })
 }
 
-fn object(values_json: &str) -> Result<Map<String, Value>, AccUiError> {
+pub(crate) fn object(values_json: &str) -> Result<Map<String, Value>, AccUiError> {
     match serde_json::from_str(values_json) {
         Ok(Value::Object(m)) => Ok(m),
         Ok(_) => Err(invalid("values must be a JSON object")),

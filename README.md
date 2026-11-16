@@ -189,12 +189,22 @@ cost:
   - `acc_ui_ask(spec)` waits for `~/.acc-ui/<session>/<spec id>/answer.json`, which
     the client writes with `answer_script`.
 - `setup_script()` installs the server under a content-hashed path, and
-  `mcp_server(path, session)` gives the launch command for ACC.
+  `mcp_server(path, session)` gives the server for ACC's `LaunchRequest.mcp_servers`,
+  which adds it to that one session next to the harness's own servers (Claude, Codex
+  and ACP agents; pi has no MCP).
 - `recognize_tool` finds the calls under every harness's naming. `submit_prompt` and
   `parse_submit` handle answers sent as a user message:
   `<acc-ui-submit id="deploy">{"choice":"rollback"}</acc-ui-submit>`.
 
-The full tool schema is about 12.8 KB and is sent with both tools.
+In a `SessionView` the calls are ordinary tool items. `agent_calls(view)`,
+`agent_call(view, item_id)` and `open_agent_asks(view)` (methods of `SessionView` in
+the bindings) find them with their spec and, for asks, where the answer stands. Show
+`AgentCall.spec` in place of `item_spec`. `AgentCall::answer(session, values)` picks
+the delivery: the answer script while the call waits, or a submit prompt for the next
+turn once it timed out.
+
+The spec schema (about 13.7 KB) is sent once, with `acc_ui_render`; `acc_ui_ask` takes
+the same spec and points there, so the tool list is about 15 KB.
 
 ## Development
 
