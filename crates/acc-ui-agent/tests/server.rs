@@ -192,6 +192,27 @@ fn json_rpc_exchange() {
         started.elapsed()
     );
 
+    // A long line of many short strings, as a big table makes.
+    let rows: Vec<Value> = (0..4000).map(|i| json!([format!("r{i}"), "ü \"x\"", "\\"])).collect();
+    let started = Instant::now();
+    let r = s.call(tool_call(
+        json!(10),
+        "acc_ui_render",
+        json!({ "spec": { "root": { "type": "table", "columns": [{"label": "a"}, {"label": "b"}, {"label": "c"}], "rows": rows } } }),
+    ));
+    assert!(text_of(&r).starts_with("acc-ui: shown"));
+    assert!(
+        started.elapsed() < Duration::from_secs(8),
+        "{:?}",
+        started.elapsed()
+    );
+
+    // Escaped quotes and backslashes before the spec id don't hide it.
+    s.send(r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"acc_ui_ask","arguments":{"spec":{"title":"c:\\ \"q\\\" \\\\","root":{"type":"badge","text":"\\"},"id":"after-escapes"}}}}"#);
+    let ping = s.call(json!({"jsonrpc":"2.0","id":12,"method":"ping"}));
+    assert_eq!(ping["result"], json!({}));
+    assert!(dir.join("s1/after-escapes/waiting").exists());
+
     // EOF ends the server.
     drop(s.stdin.take());
     let deadline = Instant::now() + Duration::from_secs(5);

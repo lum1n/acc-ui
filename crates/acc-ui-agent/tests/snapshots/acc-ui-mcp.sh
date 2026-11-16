@@ -42,6 +42,11 @@ SEQ=0
 # the type of params.arguments.spec ("o" object, "s" string, "" absent).
 # Empty lines for absent ones; nothing at all when the line isn't JSON. An
 # object or array id comes out as "{" or "[".
+#
+# The line is split on quotes and on commas first, and only the pieces
+# between strings are walked a character at a time: substr() is linear in
+# the one true awk, which counts UTF-8 characters, so walking a whole long
+# line would be quadratic.
 SCAN='
 function path(   p, d) {
   p = ""
@@ -51,56 +56,82 @@ function path(   p, d) {
   }
   return p
 }
-function value(tok,   p) {
-  p = path()
+function wanted(p) {
+  return p == "id" || p == "method" || p == "params/name" || \
+    p == "params/arguments/spec/id" || p == "params/protocolVersion" || p == "params/requestId"
+}
+function value(p, tok) {
   if (p == "id") f_id = tok
   else if (p == "method") f_method = tok
   else if (p == "params/name") f_name = tok
   else if (p == "params/arguments/spec/id") f_spec_id = tok
   else if (p == "params/protocolVersion") f_pv = tok
   else if (p == "params/requestId") f_req = tok
-  else if (p == "params/arguments/spec" && substr(tok, 1, 1) == "\"") f_spec = "s"
+}
+# How many backslashes x ends with.
+function trailing(x,   l, c) {
+  l = length(x); c = 0
+  while (l > 0 && substr(x, l, 1) == "\\") { c++; l-- }
+  return c
+}
+# The string between the quotes before part a and after part b.
+function body(a, b,   t, k) {
+  t = P[a]
+  for (k = a + 1; k <= b; k++) t = t "\"" P[k]
+  return t
+}
+function string(a, b,   p) {
+  if (depth > 0 && kind[depth] == "o" && want[depth]) {
+    key[depth] = body(a, b); want[depth] = 0
+    return
+  }
+  p = path()
+  if (p == "params/arguments/spec") f_spec = "s"
+  else if (wanted(p)) value(p, "\"" body(a, b) "\"")
+}
+# Structure and bare values between two strings.
+function outside(x,   m, q, t, n, i, j, c, d) {
+  m = split(x, Q, ",")
+  for (q = 1; q <= m; q++) {
+    if (q > 1 && depth > 0 && kind[depth] == "o") want[depth] = 1
+    t = Q[q]; n = length(t); i = 1
+    while (i <= n) {
+      c = substr(t, i, 1)
+      if (c == "{" || c == "[") {
+        if (depth == 1 && key[1] == "id" && !want[1]) f_id = c
+        if (c == "{" && depth == 3 && path() == "params/arguments/spec") f_spec = "o"
+        depth++; kind[depth] = (c == "{") ? "o" : "a"; want[depth] = (c == "{"); key[depth] = ""
+      } else if (c == "}" || c == "]") {
+        depth--
+        if (depth < 0) { bad = 1; return }
+      } else if (c != ":" && c != " " && c != "\t" && c != "\r") {
+        j = i
+        while (j <= n) {
+          d = substr(t, j, 1)
+          if (d == "}" || d == "]" || d == " " || d == "\t" || d == "\r") break
+          j++
+        }
+        value(path(), substr(t, i, j - i)); i = j
+        continue
+      }
+      i++
+    }
+  }
 }
 {
-  s = $0; n = length(s); i = 1; depth = 0; bad = 0
+  depth = 0; bad = 0
   f_id = f_method = f_name = f_spec_id = f_pv = f_req = f_spec = ""
-  while (i <= n) {
-    c = substr(s, i, 1)
-    if (c == "\"") {
-      j = i + 1
-      while (j <= n) {
-        d = substr(s, j, 1)
-        if (d == "\\") { j += 2; continue }
-        if (d == "\"") break
-        j++
-      }
-      if (j > n) { bad = 1; break }
-      tok = substr(s, i, j - i + 1)
-      i = j + 1
-      if (depth > 0 && kind[depth] == "o" && want[depth]) {
-        key[depth] = substr(tok, 2, length(tok) - 2); want[depth] = 0
-      } else value(tok)
-      continue
-    }
-    if ((c == "{" || c == "[") && depth == 1 && key[1] == "id" && !want[1]) f_id = c
-    if (c == "{") {
-      if (depth == 3 && path() == "params/arguments/spec") f_spec = "o"
-      depth++; kind[depth] = "o"; want[depth] = 1; key[depth] = ""; i++
-      continue
-    }
-    if (c == "[") { depth++; kind[depth] = "a"; want[depth] = 0; i++; continue }
-    if (c == "}" || c == "]") { depth--; i++; if (depth < 0) { bad = 1; break }; continue }
-    if (c == ",") { if (depth > 0 && kind[depth] == "o") want[depth] = 1; i++; continue }
-    if (c == ":" || c == " " || c == "\t" || c == "\r") { i++; continue }
-    j = i
-    while (j <= n) {
-      d = substr(s, j, 1)
-      if (d == "," || d == "}" || d == "]" || d == " " || d == "\t" || d == "\r") break
-      j++
-    }
-    value(substr(s, i, j - i)); i = j
+  n = split($0, P, "\"")
+  outside(P[1])
+  # Part k opens a string; an odd run of backslashes before a quote escapes it.
+  for (k = 2; k <= n && !bad; k += 2) {
+    a = k
+    while (k < n && trailing(P[k]) % 2) k++
+    if (k >= n) { bad = 1; break }
+    string(a, k)
+    outside(P[k + 1])
   }
-  if (bad || depth != 0 || substr(s, 1, 1) != "{") exit
+  if (bad || depth != 0 || substr($0, 1, 1) != "{") exit
   print f_id; print f_method; print f_name; print f_spec_id; print f_pv; print f_req; print f_spec
 }'
 
