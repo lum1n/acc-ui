@@ -99,6 +99,11 @@ fn ask_state_follows_the_output() {
         }
         other => panic!("{other:?}"),
     }
+    // Claude's output is the result's structuredContent.
+    match state(Some(&answer["structuredContent"].to_string())) {
+        AskState::Answered(s) => assert_eq!((s.id.as_str(), &s.values["a"]), ("q1", &json!("yes"))),
+        other => panic!("{other:?}"),
+    }
     let dismissed = acc_ui_agent::host::answer_result("q1", &Answer::Dismissed);
     assert_eq!(
         state(dismissed["content"][0]["text"].as_str()),

@@ -94,6 +94,16 @@ fn ask_state(output: Option<&str>) -> AskState {
     {
         return AskState::Answered(s);
     }
+    // Claude hands over an answer's `structuredContent` instead of its text.
+    if let Ok(Value::Object(o)) = serde_json::from_str::<Value>(out)
+        && let (Some(Value::String(id)), Some(Value::Object(values))) = (o.get("id"), o.get("values"))
+    {
+        return AskState::Answered(Submission {
+            id: id.clone(),
+            values: values.clone(),
+            rest: String::new(),
+        });
+    }
     if out.starts_with(result_marker::DISMISSED) {
         return AskState::Dismissed;
     }
