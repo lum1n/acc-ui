@@ -17,6 +17,7 @@
 //! Feed it every event, in order, with [`SessionView::apply_json`]. Each call
 //! returns the [`Changes`] it made, so a renderer redraws only those.
 
+mod ask;
 pub mod event;
 mod model;
 mod restore;
@@ -27,6 +28,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
+pub use ask::{AnswerDraft, Question, QuestionOption, encode_answers};
 pub use event::Event;
 use event::{Detail, FileChangeKind, ItemKind, ItemStatus, RunState, ToolKind};
 pub use model::{
@@ -216,7 +218,10 @@ impl SessionView {
                 kind,
                 item_id,
                 detail,
+                native,
             } => {
+                let questions = ask::questions(&native);
+                let plan = ask::plan(kind, &native);
                 let turn = item_id
                     .as_deref()
                     .and_then(|i| self.item(i))
@@ -229,6 +234,8 @@ impl SessionView {
                     options,
                     item_id,
                     subject: detail,
+                    questions,
+                    plan,
                     turn,
                 });
                 ch.asks = true;

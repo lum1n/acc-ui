@@ -339,6 +339,51 @@ impl From<e::AskOption> for AskOption {
     }
 }
 
+/// One question in a request.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Question {
+    pub id: Option<String>,
+    pub text: String,
+    pub header: Option<String>,
+    pub options: Vec<QuestionOption>,
+    pub multi_select: bool,
+    /// The user may type their own answer.
+    pub allows_text: bool,
+    /// Don't show or keep the answer.
+    pub secret: bool,
+    pub required: bool,
+}
+
+impl From<s::Question> for Question {
+    fn from(q: s::Question) -> Self {
+        Self {
+            id: q.id,
+            text: q.text,
+            header: q.header,
+            options: list(&q.options),
+            multi_select: q.multi_select,
+            allows_text: q.allows_text,
+            secret: q.secret,
+            required: q.required,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: Option<String>,
+}
+
+impl From<s::QuestionOption> for QuestionOption {
+    fn from(o: s::QuestionOption) -> Self {
+        Self {
+            label: o.label,
+            description: o.description,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct DiffLine {
     pub tag: LineTag,
@@ -509,6 +554,10 @@ pub struct Ask {
     pub item_id: Option<String>,
     /// The tool call to approve.
     pub subject: Option<ItemDetail>,
+    /// What a question asks; answer with [`SessionView::answer_draft`].
+    pub questions: Vec<Question>,
+    /// The plan to approve (Markdown), when the agent asks to leave plan mode.
+    pub plan: Option<String>,
     pub turn: u32,
 }
 
@@ -521,6 +570,8 @@ impl From<s::Ask> for Ask {
             options: list(&a.options),
             item_id: a.item_id,
             subject: a.subject.map(Into::into),
+            questions: list(&a.questions),
+            plan: a.plan,
             turn: n(a.turn),
         }
     }
@@ -966,6 +1017,15 @@ impl SessionView {
         self.lock().ask(&request_id).cloned().map(Into::into)
     }
 
+    /// An empty answer to waiting question `request_id`, or `None` when no
+    /// such request waits.
+    pub fn answer_draft(&self, request_id: String) -> Option<Arc<AnswerDraft>> {
+        let draft = s::AnswerDraft::new(self.lock().ask(&request_id)?);
+        Some(Arc::new(AnswerDraft {
+            inner: Mutex::new(draft),
+        }))
+    }
+
     pub fn files(&self) -> Vec<FileEntry> {
         list(self.lock().files())
     }
@@ -1057,6 +1117,92 @@ pub struct Link {
     pub repo: Option<String>,
     pub number: Option<u64>,
     pub sha: Option<String>,
+}
+
+/// The user's answers to a request's questions while they make them.
+/// Picking an option of a single-choice question replaces the earlier pick
+/// and any typed text; typing text replaces the pick. On a multi-choice
+/// question picks toggle and text is one more answer. Once complete, send
+/// [`option_id`](Self::option_id) as the `AnswerPermission` option id, then
+/// call [`SessionView::answered`].
+#[derive(Debug, uniffi::Object)]
+pub struct AnswerDraft {
+    inner: Mutex<s::AnswerDraft>,
+}
+
+impl AnswerDraft {
+    fn lock(&self) -> MutexGuard<'_, s::AnswerDraft> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+fn idx(v: u32) -> usize {
+    usize::try_from(v).unwrap_or(usize::MAX)
+}
+
+#[uniffi::export]
+impl AnswerDraft {
+    pub fn request_id(&self) -> String {
+        self.lock().request_id().to_owned()
+    }
+
+    pub fn questions(&self) -> Vec<Question> {
+        list(self.lock().questions())
+    }
+
+    /// Picks (or toggles, on a multi-choice question) an option. False when
+    /// there is no such option.
+    pub fn pick(&self, question: u32, option: u32) -> bool {
+        self.lock().pick(idx(question), idx(option))
+    }
+
+    pub fn pick_label(&self, question: u32, label: String) -> bool {
+        self.lock().pick_label(idx(question), &label)
+    }
+
+    /// Sets a question's typed answer. False when it takes no text.
+    pub fn set_text(&self, question: u32, text: String) -> bool {
+        self.lock().set_text(idx(question), &text)
+    }
+
+    /// The picked option indexes, in option order.
+    pub fn picked(&self, question: u32) -> Vec<u32> {
+        self.lock().picked(idx(question)).iter().map(|&i| n(i)).collect()
+    }
+
+    pub fn text(&self, question: u32) -> String {
+        self.lock().text(idx(question)).to_owned()
+    }
+
+    /// The answers as they will be sent: picked labels, then typed text.
+    pub fn answer(&self, question: u32) -> Vec<String> {
+        self.lock().answer(idx(question))
+    }
+
+    pub fn is_answered(&self, question: u32) -> bool {
+        self.lock().is_answered(idx(question))
+    }
+
+    /// The required questions still without an answer.
+    pub fn missing(&self) -> Vec<u32> {
+        self.lock().missing().into_iter().map(n).collect()
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.lock().is_complete()
+    }
+
+    /// The option id that answers the request, once complete.
+    pub fn option_id(&self) -> Option<String> {
+        self.lock().option_id()
+    }
+}
+
+/// Answers to every question, one list per question, as an
+/// `AnswerPermission` option id.
+#[uniffi::export]
+pub fn encode_answers(answers: Vec<Vec<String>>) -> String {
+    s::encode_answers(&answers)
 }
 
 fn utf16_at(text: &str, byte: usize) -> u32 {

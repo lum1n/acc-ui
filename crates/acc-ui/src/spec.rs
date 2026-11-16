@@ -523,7 +523,52 @@ pub struct Request {
     /// tool and its target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// Choosing one answers the request. A question's options answer its
+    /// first question alone; may be empty when `questions` has text-only
+    /// questions.
+    #[serde(default)]
     pub options: Vec<RequestOption>,
+    /// What a question asks, when it asks more than one option can say.
+    /// Answer them all through the session's `AnswerDraft`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<RequestQuestion>,
+    /// The plan an approval is about, as Markdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RequestQuestion {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<RequestChoice>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multi_select: bool,
+    /// The user may type their own answer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allows_text: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub secret: bool,
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub required: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RequestChoice {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

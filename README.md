@@ -34,7 +34,7 @@ instead of a top-to-bottom transcript
 | `header()` | harness, model, title, run state, latest usage and quota, root, turn count |
 | `now()` | what the agent and its subagents are doing this second (`Running cargo test`, `Editing src/a.rs`) |
 | `plan()` | the to-do list with completed/total and the current entry |
-| `asks()` | approvals and questions waiting on the user |
+| `asks()` | approvals and questions waiting on the user: options with what each does, the tool call to approve, every question (choices with descriptions, multi-select, free text, secret, required) and, for a plan approval, the plan |
 | `files()` | every file read or changed: net change, +/-, each edit's hunks, the turns that touched it |
 | `commands()` | each command unwrapped from its `zsh -lc '...'`, with a one-line headline, exit code, outcome (succeeded, failed, or unknown when the harness gives no exit code) and an output tail |
 | `subagents()` | each run of another agent: task, status, report, and how much it did |
@@ -45,6 +45,10 @@ let mut view = SessionView::new();
 view.set_root("/home/me/project");          // the client knows the session's cwd
 for line in events { let changes = view.apply_json(line)?; /* redraw what changed */ }
 view.answered(request_id);                  // after answering an ask
+
+let mut draft = AnswerDraft::new(view.ask(request_id).unwrap()); // a question's answers
+draft.pick(0, 1); draft.set_text(1, "acme");
+if let Some(option_id) = draft.option_id() { /* send AnswerPermission { request_id, option_id } */ }
 
 let view = SessionView::from_transcript(&saved)?; // an ACC session snapshot or transcript
 ```
@@ -133,7 +137,12 @@ from the same types.
   `diff`), tool calls and subagent runs as a `disclosure` whose summary says what
   happened (`$ python3 -m unittest`, `Edited inventory.py +4 −3`).
 - `SessionView::ask_spec(ask)`: a pending approval or question as a `request` whose
-  options carry `answer` actions.
+  options carry `answer` actions, with its questions and the plan to approve.
+
+Questions are answered through an `AnswerDraft`: it knows that picking a single-choice
+option replaces the earlier pick, that multi-choice picks toggle, which questions take
+typed text and which are still missing, and it encodes the answers as the option id
+every ACC driver decodes. Apps only draw it and send ACC's `AnswerPermission`.
 
 ## Conventions: optional, plain markdown
 
@@ -189,8 +198,9 @@ scripts/build-xcframework.sh         # macOS: bindings/swift with AccUIFFI.xcfra
 ```
 
 In Swift and Kotlin the session model is a `SessionView` object with the same methods
-(`applyJson`, `snapshot`, the region getters, `itemSpec`, `askSpec`) returning typed
-records, plus the free functions `markdownBlocks` and `detectLinks`. Links carry their
+(`applyJson`, `snapshot`, the region getters, `itemSpec`, `askSpec`, `answerDraft`)
+returning typed records, an `AnswerDraft` object, and the free functions
+`markdownBlocks`, `detectLinks` and `encodeAnswers`. Links carry their
 range as UTF-8 bytes and as UTF-16 units, for `NSRange` and Kotlin strings.
 
 Sessh already links one Rust static library (acc-ffi), so it should depend on

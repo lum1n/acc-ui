@@ -9,7 +9,9 @@ mod common;
 
 use acc_ui::SessionView;
 use acc_ui::session::event::{ItemKind, OptionKind};
-use acc_ui::session::{ActivityKind, CommandOutcome, Digest, DigestPart, Event, TurnOutcome};
+use acc_ui::session::{
+    ActivityKind, AnswerDraft, CommandOutcome, Digest, DigestPart, Event, TurnOutcome, encode_answers,
+};
 use serde_json::{Value, json};
 
 fn replay(lines: &str) -> (SessionView, Vec<Value>) {
@@ -671,4 +673,73 @@ fn unknown_events_and_fields_are_ignored() {
     .unwrap();
     assert_eq!(view.now()[0].kind, ActivityKind::Working);
     assert!(view.apply_json("not json").is_err());
+}
+
+#[test]
+fn questions_are_answered_through_a_draft() {
+    let mut view = SessionView::new();
+    apply(
+        &mut view,
+        &[
+            json!({"type":"permission_requested","request_id":"q","title":"Which DB?","kind":"question",
+                 "item_id":"toolu_1",
+                 "options":[{"id":"Postgres","label":"Postgres"},{"id":"SQLite","label":"SQLite"}],
+                 "native":{"questions":[
+                     {"question":"Which DB?","header":"DB","multiSelect":false,
+                      "options":[{"label":"Postgres","description":"server"},{"label":"SQLite","description":"file"}]},
+                     {"question":"Extras?","header":"Extras","multiSelect":true,
+                      "options":[{"label":"Cache"},{"label":"Search"}]}]}}),
+        ],
+    );
+    let ask = view.ask("q").unwrap();
+    assert_eq!(ask.questions.len(), 2);
+    assert_eq!(ask.questions[0].options[1].description.as_deref(), Some("file"));
+    assert_eq!(ask.plan, None);
+
+    let mut draft = AnswerDraft::new(ask);
+    assert!(draft.pick_label(0, "SQLite"));
+    assert!(draft.pick_label(1, "Search"));
+    assert!(draft.set_text(1, "Queue"));
+    let option_id = draft.option_id().unwrap();
+    assert_eq!(option_id, r#"[["SQLite"],["Search","Queue"]]"#);
+    assert_eq!(
+        option_id,
+        encode_answers(&[vec!["SQLite".into()], vec!["Search".into(), "Queue".into()]])
+    );
+
+    assert!(view.answered(draft.request_id()).asks);
+    assert!(view.asks().is_empty());
+}
+
+#[test]
+fn plan_approvals_carry_the_plan() {
+    let mut view = SessionView::new();
+    apply(
+        &mut view,
+        &[
+            json!({"type":"permission_requested","request_id":"p","title":"ExitPlanMode",
+                 "options":[{"id":"allow","label":"Allow","kind":"allow_once"},
+                            {"id":"deny","label":"Deny","kind":"reject_once"}],
+                 "item_id":"toolu_2",
+                 "detail":{"type":"tool","tool":"ExitPlanMode","title":""},
+                 "native":{"plan":"## Plan\n1. Add caching"}}),
+        ],
+    );
+    let ask = view.ask("p").unwrap();
+    assert_eq!(ask.plan.as_deref(), Some("## Plan\n1. Add caching"));
+    assert!(ask.questions.is_empty());
+    assert!(!AnswerDraft::new(ask).is_complete());
+}
+
+#[test]
+fn restored_asks_keep_their_questions() {
+    let snapshot = json!({
+        "transcript": {"items": [
+            {"id":"u","kind":"user_message","status":"completed","text":"Go","detail":{"type":"text"},"seq":0}
+        ]},
+        "permissions": [{"request_id":"q","title":"Which DB?","options":[],"kind":"question","item_id":null,
+            "detail":null,"native":{"questions":[{"question":"Which DB?","options":[{"label":"SQLite"}]}]}}]
+    });
+    let view = SessionView::from_transcript(&snapshot.to_string()).unwrap();
+    assert_eq!(view.asks()[0].questions[0].options[0].label, "SQLite");
 }

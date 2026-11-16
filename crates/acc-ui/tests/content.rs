@@ -223,3 +223,52 @@ fn recorded_asks_become_requests() {
     let spec = view.ask_spec(edit).spec.unwrap();
     assert_eq!(spec["nodes"][0]["detail"], "inventory.py +1 −1");
 }
+
+#[test]
+fn question_and_plan_asks_become_requests() {
+    let mut view = SessionView::new();
+    for e in [
+        json!({"type":"permission_requested","request_id":"q","title":"Name it?","kind":"question",
+               "native":{"questions":[
+                   {"id":"q1","question":"Name it?","isOther":true,"isSecret":false,"options":null},
+                   {"id":"q2","question":"Which DB?","header":"DB","isOther":false,"isSecret":false,
+                    "options":[{"label":"Postgres","description":""}]}]}}),
+        json!({"type":"permission_requested","request_id":"p","title":"ExitPlanMode",
+               "options":[{"id":"allow","label":"Allow","kind":"allow_once"},
+                          {"id":"deny","label":"Deny","kind":"reject_once"}],
+               "native":{"plan":"1. Add caching"}}),
+    ] {
+        view.apply_json(&e.to_string()).unwrap();
+    }
+
+    let out = view.ask_spec(view.ask("q").unwrap());
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let spec = out.spec.unwrap();
+    let req = &spec["nodes"][0];
+    assert_eq!(req["options"], json!([]), "a text-only question has no options");
+    assert_eq!(
+        req["questions"],
+        json!([
+            {"text": "Name it?", "allows_text": true},
+            {"text": "Which DB?", "header": "DB", "options": [{"label": "Postgres"}]}
+        ])
+    );
+    let fallback = spec["fallback"].as_str().unwrap();
+    assert!(fallback.contains("Which DB? (Postgres)"), "{fallback}");
+
+    let out = view.ask_spec(view.ask("p").unwrap());
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let spec = out.spec.unwrap();
+    assert_eq!(spec["nodes"][0]["plan"], "1. Add caching");
+    assert!(spec["fallback"].as_str().unwrap().contains("1. Add caching"));
+}
+
+#[test]
+fn agents_cannot_send_questions_or_plans() {
+    let out = normalize_value(
+        json!({"root": {"type": "request", "request_id": "r", "kind": "question",
+        "title": "x", "questions": [{"text": "Password?", "allows_text": true}]}}),
+    );
+    assert!(!out.errors.is_empty());
+    assert!(out.spec.is_none() || !out.spec.as_ref().unwrap().to_string().contains("Password"));
+}

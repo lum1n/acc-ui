@@ -149,6 +149,29 @@ impl SessionView {
         if let Some(d) = detail.filter(|d| !d.is_empty()) {
             request["detail"] = d.into();
         }
+        if let Some(plan) = &ask.plan {
+            request["plan"] = plan.as_str().into();
+        }
+        if !ask.questions.is_empty() {
+            request["questions"] = ask
+                .questions
+                .iter()
+                .map(|q| {
+                    json!({
+                        "text": q.text,
+                        "header": q.header,
+                        "options": q.options.iter()
+                            .map(|o| json!({ "label": o.label, "description": o.description }))
+                            .collect::<Vec<_>>(),
+                        "multi_select": q.multi_select,
+                        "allows_text": q.allows_text,
+                        "secret": q.secret,
+                        "required": q.required,
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into();
+        }
         normalize_trusted(json!({ "root": request }))
     }
 }

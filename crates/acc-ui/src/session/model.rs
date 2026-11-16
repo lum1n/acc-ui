@@ -5,6 +5,7 @@
 use serde::Serialize;
 use serde::ser::{SerializeStruct, Serializer};
 
+use super::ask::Question;
 use super::event::{
     AskKind, AskOption, Detail, FileChangeKind, Hunk, ItemKind, ItemStatus, PlanEntry, PlanStatus, Quota,
     RunState, Usage,
@@ -145,6 +146,13 @@ pub struct Ask {
     pub item_id: Option<String>,
     /// The tool call to approve (its command, file changes or arguments).
     pub subject: Option<Detail>,
+    /// What a question asks, one entry per question; empty for approvals.
+    /// Answer them with an [`AnswerDraft`](super::AnswerDraft). When empty,
+    /// a question still takes free text as its option id.
+    pub questions: Vec<Question>,
+    /// The plan to approve (Markdown) when the agent asks to leave plan
+    /// mode; the options then approve or reject the plan.
+    pub plan: Option<String>,
     pub turn: usize,
 }
 

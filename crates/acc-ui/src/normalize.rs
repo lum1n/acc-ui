@@ -455,8 +455,8 @@ impl Walker {
                 let id = r.request_id.clone();
                 r.options
                     .retain(|o| matches!(&o.action, Action::Answer { request_id, .. } if *request_id == id));
-                if r.options.is_empty() {
-                    return Err("a request needs options that answer it".into());
+                if r.options.is_empty() && r.questions.is_empty() {
+                    return Err("a request needs options or questions that answer it".into());
                 }
             }
             Node::Form(f) => {
@@ -595,6 +595,17 @@ impl Walker {
             }),
             Node::Request(r) => {
                 push(r.title.clone());
+                if let Some(plan) = &r.plan {
+                    push(plan.clone());
+                }
+                for q in &r.questions {
+                    let choices: Vec<&str> = q.options.iter().map(|o| o.label.as_str()).collect();
+                    push(if choices.is_empty() {
+                        q.text.clone()
+                    } else {
+                        format!("{} ({})", q.text, choices.join(" / "))
+                    });
+                }
                 push(
                     r.options
                         .iter()
