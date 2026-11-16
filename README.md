@@ -267,6 +267,24 @@ turn once it timed out.
 The spec schema (about 13.7 KB) is sent once, with `acc_ui_render`; `acc_ui_ask` takes
 the same spec and points there, so the tool list is about 15 KB.
 
+## Known limitations
+
+Deliberate, for now:
+
+- Claude's Edit hunks come with `old_start` 0 (no line numbers), so apps show them as
+  snippets rather than located hunks.
+- Read detection is conservative: only `cat`, `head`, `tail`, `sed -n` and the like on
+  literal paths count. `cat < file`, `awk`, `wc`, `xargs` and `find -exec` aren't reads.
+- `make -C dir test` and other commands with unclear parts are `Other`.
+- `CommandKind::Git` doesn't say whether the command changed the repository; `tool` holds
+  the subcommand (`git commit`).
+- `AnswerDraft` doesn't cover declining or cancelling an MCP elicitation; apps show those
+  as plain options.
+- Secret answers live in memory as plain strings. Apps must not log or persist them.
+- The agent's own asks aren't in core's `asks()`; merge `open_agent_asks()` (`openAgentAsks()`
+  in the bindings).
+- A user message sent mid-turn starts a new turn.
+
 ## Development
 
 ```sh
