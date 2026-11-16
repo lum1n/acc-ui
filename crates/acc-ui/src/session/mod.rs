@@ -30,8 +30,8 @@ use serde::Serialize;
 pub use event::Event;
 use event::{Detail, FileChangeKind, ItemKind, ItemStatus, RunState, ToolKind};
 pub use model::{
-    Activity, ActivityKind, Ask, CommandEntry, Digest, FileEdit, FileEntry, Header, ItemView,
-    OUTPUT_TAIL_LINES, PlanView, SubagentEntry, Turn, TurnOutcome,
+    Activity, ActivityKind, Ask, CommandEntry, CommandOutcome, Digest, DigestPart, FileEdit, FileEntry,
+    HEADLINE_CHARS, Header, ItemView, OUTPUT_TAIL_LINES, PlanView, SubagentEntry, Turn, TurnOutcome,
 };
 pub use shell::unwrap_shell;
 
@@ -313,6 +313,31 @@ impl SessionView {
         self.item_index.get(id).map(|&i| &self.items[i])
     }
 
+    /// A file by path, as [`Changes::files`] names it.
+    pub fn file(&self, path: &str) -> Option<&FileEntry> {
+        self.file_index.get(path).map(|&i| &self.files[i])
+    }
+
+    /// A command by item id, as [`Changes::commands`] names it.
+    pub fn command(&self, item_id: &str) -> Option<&CommandEntry> {
+        self.command_index.get(item_id).map(|&i| &self.commands[i])
+    }
+
+    /// A subagent by item id, as [`Changes::subagents`] names it.
+    pub fn subagent(&self, item_id: &str) -> Option<&SubagentEntry> {
+        self.subagent_index.get(item_id).map(|&i| &self.subagents[i])
+    }
+
+    /// A turn by index, as [`Changes::turns`] names it.
+    pub fn turn(&self, index: usize) -> Option<&Turn> {
+        self.turns.get(index)
+    }
+
+    /// A waiting ask by request id.
+    pub fn ask(&self, request_id: &str) -> Option<&Ask> {
+        self.asks.iter().find(|a| a.request_id == request_id)
+    }
+
     /// What the agent and its subagents are doing right now, oldest first.
     pub fn now(&self) -> Vec<Activity> {
         self.items
@@ -363,8 +388,14 @@ impl SessionView {
             let t = &mut self.turns[turn];
             t.items.push(id.clone());
             if kind == ItemKind::AgentMessage {
+                // The message it replaces as the narrative folds away.
+                if t.narrative_item.is_some() {
+                    t.steps += 1;
+                }
                 t.narrative_item = Some(id.clone());
                 t.narrative = Some(String::new());
+            } else if kind != ItemKind::UserMessage {
+                t.steps += 1;
             }
             Changes::push(&mut ch.turns, turn);
         }
@@ -509,15 +540,18 @@ impl SessionView {
         }
         let output = if output.is_empty() { &item.output } else { output };
         let (output_tail, output_lines) = tail(output);
+        let display = unwrap_shell(command);
         let entry = CommandEntry {
             item_id: item.id.clone(),
             parent: item.parent.clone(),
             turn: item.turn,
-            display: unwrap_shell(command),
+            headline: headline(&display),
+            display,
             command: command.clone(),
             cwd: cwd.clone(),
             status: item.status,
             exit_code: *exit_code,
+            outcome: CommandOutcome::of(item.status, *exit_code),
             output_tail,
             output_lines,
             started_at_ms: item.started_at_ms,
@@ -713,6 +747,7 @@ impl SessionView {
             narrative: None,
             narrative_item: None,
             items: Vec::new(),
+            steps: 0,
             digest: Digest::default(),
             outcome: TurnOutcome::Running,
             open: true,
@@ -778,7 +813,7 @@ impl SessionView {
                 }
                 Detail::Command { exit_code, .. } => {
                     d.commands += 1;
-                    if item.status == ItemStatus::Failed || exit_code.is_some_and(|c| c != 0) {
+                    if CommandOutcome::of(item.status, *exit_code) == CommandOutcome::Failed {
                         d.commands_failed += 1;
                     }
                 }
@@ -949,6 +984,21 @@ fn shorten(s: &str, max: usize) -> String {
         "{}…",
         cut.trim_end_matches(|c: char| c.is_whitespace() || c == ',' || c == '.')
     )
+}
+
+/// The first non-empty line of a command, cut to [`HEADLINE_CHARS`], with
+/// `…` when lines or characters were left out.
+fn headline(display: &str) -> String {
+    let first = first_line(display).unwrap_or_default();
+    let more_lines = display.trim().lines().count() > 1;
+    if first.chars().count() > HEADLINE_CHARS {
+        let cut: String = first.chars().take(HEADLINE_CHARS - 1).collect();
+        format!("{}…", cut.trim_end())
+    } else if more_lines {
+        format!("{first} …")
+    } else {
+        first
+    }
 }
 
 fn non_empty(s: String) -> Option<String> {

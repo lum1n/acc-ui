@@ -3,6 +3,7 @@
 //! UniFFI records later.
 
 use serde::Serialize;
+use serde::ser::{SerializeStruct, Serializer};
 
 use super::event::{
     AskKind, AskOption, Detail, FileChangeKind, Hunk, ItemKind, ItemStatus, PlanEntry, PlanStatus, Quota,
@@ -186,9 +187,14 @@ pub struct CommandEntry {
     pub command: String,
     /// What the agent asked for: `zsh -lc '...'` unwrapped.
     pub display: String,
+    /// `display` on one line for a list row: its first non-empty line, cut
+    /// at [`HEADLINE_CHARS`], with `…` when anything was left out.
+    pub headline: String,
     pub cwd: Option<String>,
     pub status: ItemStatus,
     pub exit_code: Option<i32>,
+    /// Whether it worked, as far as anyone can tell.
+    pub outcome: CommandOutcome,
     /// The last lines of output (see [`OUTPUT_TAIL_LINES`]).
     pub output_tail: String,
     pub output_lines: usize,
@@ -198,6 +204,35 @@ pub struct CommandEntry {
 
 /// Lines of output kept in [`CommandEntry::output_tail`].
 pub const OUTPUT_TAIL_LINES: usize = 40;
+
+/// Longest [`CommandEntry::headline`], in characters.
+pub const HEADLINE_CHARS: usize = 120;
+
+/// How a command went.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandOutcome {
+    #[default]
+    Running,
+    /// Exited 0.
+    Succeeded,
+    /// Exited non-zero, or the harness reported it failed.
+    Failed,
+    /// Finished, but the harness gave no exit code (Claude Code never
+    /// does), so success can't be told from output alone.
+    Unknown,
+}
+
+impl CommandOutcome {
+    pub(crate) fn of(status: ItemStatus, exit_code: Option<i32>) -> Self {
+        match (status, exit_code) {
+            (ItemStatus::Failed, _) | (_, Some(1..) | Some(..=-1)) => Self::Failed,
+            (ItemStatus::Running, _) => Self::Running,
+            (ItemStatus::Completed, Some(0)) => Self::Succeeded,
+            (ItemStatus::Completed, None) => Self::Unknown,
+        }
+    }
+}
 
 /// A run of another agent and what it did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -237,6 +272,9 @@ pub struct Turn {
     pub narrative_item: Option<String>,
     /// The main conversation's items in this turn, in order.
     pub items: Vec<String>,
+    /// Items an app folds away under the prompt: everything in `items`
+    /// but user messages and the narrative.
+    pub steps: u32,
     pub digest: Digest,
     pub outcome: TurnOutcome,
     pub open: bool,
@@ -270,8 +308,9 @@ pub enum TurnOutcome {
 }
 
 /// What a turn did, counted, for a one-line summary under its prompt.
-/// Subagents' work in the turn counts too.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+/// Subagents' work in the turn counts too. It serialises with its
+/// [`parts`](Self::parts) and [`summary`](Self::summary) alongside the counts.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Digest {
     /// Distinct files changed, of them created and deleted.
     pub files_changed: u32,
@@ -294,42 +333,134 @@ impl Digest {
         *self == Self::default()
     }
 
-    /// An English line such as `Edited 3 files (+19 −3) · read 2 files ·
-    /// ran 3 commands, 1 failed · 1 subagent`. Apps that localise build
-    /// their own from the fields.
-    pub fn summary(&self) -> String {
-        let n =
-            |count: u32, one: &str, many: &str| format!("{count} {}", if count == 1 { one } else { many });
+    /// The counts worth showing, in reading order: one chip each in a
+    /// digest row. Empty when the turn did nothing countable.
+    pub fn parts(&self) -> Vec<DigestPart> {
         let mut parts = Vec::new();
         if self.files_changed > 0 {
-            parts.push(format!(
-                "Edited {} (+{} −{})",
-                n(self.files_changed, "file", "files"),
-                self.lines_added,
-                self.lines_removed
-            ));
+            parts.push(DigestPart::Edited {
+                files: self.files_changed,
+                created: self.files_created,
+                deleted: self.files_deleted,
+                added: self.lines_added,
+                removed: self.lines_removed,
+            });
         }
         if self.files_read > 0 {
-            parts.push(format!("read {}", n(self.files_read, "file", "files")));
+            parts.push(DigestPart::Read {
+                files: self.files_read,
+            });
         }
         if self.commands > 0 {
-            let mut s = format!("ran {}", n(self.commands, "command", "commands"));
-            if self.commands_failed > 0 {
-                s.push_str(&format!(", {} failed", self.commands_failed));
-            }
-            parts.push(s);
+            parts.push(DigestPart::Ran {
+                commands: self.commands,
+                failed: self.commands_failed,
+            });
         }
         if self.subagents > 0 {
-            parts.push(n(self.subagents, "subagent", "subagents"));
+            parts.push(DigestPart::Subagents {
+                count: self.subagents,
+            });
         }
         if self.tools > 0 {
-            parts.push(n(self.tools, "other tool", "other tools"));
+            parts.push(DigestPart::Tools { count: self.tools });
         }
-        let mut s = parts.join(" · ");
+        parts
+    }
+
+    /// An English line such as `Edited 3 files (+19 −3) · read 2 files ·
+    /// ran 3 commands, 1 failed · 1 subagent`. Apps that localise build
+    /// their own from [`parts`](Self::parts).
+    pub fn summary(&self) -> String {
+        let mut s = self
+            .parts()
+            .iter()
+            .map(DigestPart::label)
+            .collect::<Vec<_>>()
+            .join(" · ");
         if let Some(c) = s.get(..1) {
             s = c.to_uppercase() + &s[1..];
         }
         s
+    }
+}
+
+impl Serialize for Digest {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut s = serializer.serialize_struct("Digest", 12)?;
+        s.serialize_field("files_changed", &self.files_changed)?;
+        s.serialize_field("files_created", &self.files_created)?;
+        s.serialize_field("files_deleted", &self.files_deleted)?;
+        s.serialize_field("lines_added", &self.lines_added)?;
+        s.serialize_field("lines_removed", &self.lines_removed)?;
+        s.serialize_field("files_read", &self.files_read)?;
+        s.serialize_field("commands", &self.commands)?;
+        s.serialize_field("commands_failed", &self.commands_failed)?;
+        s.serialize_field("subagents", &self.subagents)?;
+        s.serialize_field("tools", &self.tools)?;
+        s.serialize_field("parts", &self.parts())?;
+        s.serialize_field("summary", &self.summary())?;
+        s.end()
+    }
+}
+
+/// One count in a [`Digest`], with what an app needs to word and colour it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DigestPart {
+    /// Files changed, `created` and `deleted` among them, and lines.
+    Edited {
+        files: u32,
+        created: u32,
+        deleted: u32,
+        added: u32,
+        removed: u32,
+    },
+    Read {
+        files: u32,
+    },
+    /// Commands run; `failed` ones are worth a warning colour.
+    Ran {
+        commands: u32,
+        failed: u32,
+    },
+    Subagents {
+        count: u32,
+    },
+    /// Other tool calls: searches, fetches, MCP tools.
+    Tools {
+        count: u32,
+    },
+}
+
+impl DigestPart {
+    /// The part in English, lower case: `edited 3 files (+19 −3)`.
+    pub fn label(&self) -> String {
+        let n =
+            |count: u32, one: &str, many: &str| format!("{count} {}", if count == 1 { one } else { many });
+        match *self {
+            Self::Edited {
+                files,
+                added,
+                removed,
+                ..
+            } => format!("edited {} (+{added} −{removed})", n(files, "file", "files")),
+            Self::Read { files } => format!("read {}", n(files, "file", "files")),
+            Self::Ran { commands, failed } => {
+                let mut s = format!("ran {}", n(commands, "command", "commands"));
+                if failed > 0 {
+                    s.push_str(&format!(", {failed} failed"));
+                }
+                s
+            }
+            Self::Subagents { count } => n(count, "subagent", "subagents"),
+            Self::Tools { count } => n(count, "other tool", "other tools"),
+        }
+    }
+
+    /// Whether it reports something that went wrong.
+    pub fn is_warning(&self) -> bool {
+        matches!(self, Self::Ran { failed: 1.., .. })
     }
 }
 

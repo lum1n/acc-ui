@@ -398,15 +398,19 @@ function renderNow() {
   }).join("");
 }
 
+// Wording and colour only: which chips and their counts come from Rust's Digest::parts.
 function digestChips(d) {
-  const c = [];
-  if (d.files_changed) c.push(`<span class="chip">Edited <b>${plural(d.files_changed, "file", "files")}</b> <span class="add">+${d.lines_added}</span> <span class="rem">−${d.lines_removed}</span></span>`);
-  if (d.files_created) c.push(`<span class="chip"><b>${d.files_created}</b> new</span>`);
-  if (d.files_read) c.push(`<span class="chip">Read <b>${d.files_read}</b></span>`);
-  if (d.commands) c.push(`<span class="chip${d.commands_failed ? " bad" : ""}">Ran <b>${plural(d.commands, "command", "commands")}</b>${d.commands_failed ? `, ${d.commands_failed} failed` : ""}</span>`);
-  if (d.subagents) c.push(`<span class="chip"><b>${plural(d.subagents, "subagent", "subagents")}</b></span>`);
-  if (d.tools) c.push(`<span class="chip"><b>${d.tools}</b> other tools</span>`);
-  return c.join("");
+  return (d.parts || []).map((p) => {
+    switch (p.kind) {
+      case "edited": return `<span class="chip">Edited <b>${plural(p.files, "file", "files")}</b> <span class="add">+${p.added}</span> <span class="rem">−${p.removed}</span></span>` +
+        (p.created ? `<span class="chip"><b>${p.created}</b> new</span>` : "");
+      case "read": return `<span class="chip">Read <b>${p.files}</b></span>`;
+      case "ran": return `<span class="chip${p.failed ? " bad" : ""}">Ran <b>${plural(p.commands, "command", "commands")}</b>${p.failed ? `, ${p.failed} failed` : ""}</span>`;
+      case "subagents": return `<span class="chip"><b>${plural(p.count, "subagent", "subagents")}</b></span>`;
+      case "tools": return `<span class="chip"><b>${p.count}</b> other tools</span>`;
+      default: return "";
+    }
+  }).join("");
 }
 
 function renderTurns() {
@@ -416,7 +420,7 @@ function renderTurns() {
   const atBottom = col.scrollHeight - col.scrollTop - col.clientHeight < 80;
   col.innerHTML = `<h2>Turns <span class="n">${turns.length}</span></h2>` + turns.map((t) => {
     const dur = t.ended_at_ms && t.started_at_ms ? fmtMs(t.ended_at_ms - t.started_at_ms) : "";
-    const folded = Math.max(0, t.items.length - 1 - (t.narrative_item ? 1 : 0));
+    const folded = t.steps;
     const answer = t.narrative != null
       ? `<div class="answer">${folded ? `<div class="folded">${plural(folded, "step", "steps")} folded</div>` : ""}<div class="md">${markdown(t.narrative)}${t.open ? '<span class="caret"></span>' : ""}</div></div>`
       : t.open ? `<div class="answer"><span class="caret"></span></div>` : "";
@@ -461,11 +465,11 @@ function filesPanel() {
 function commandsPanel() {
   const cmds = state.commands || [];
   const rows = cmds.map((c) => {
-    const st = c.status === "running" ? "running" : c.status === "failed" || (c.exit_code ?? 0) !== 0 ? "fail" : c.exit_code === 0 ? "ok" : "unknown";
+    const st = { running: "running", succeeded: "ok", failed: "fail", unknown: "unknown" }[c.outcome];
     const key = "cmd:" + c.item_id;
     const code = c.exit_code != null ? `<span class="code ${c.exit_code === 0 ? "ok" : "fail"}">${c.exit_code}</span>` : c.status === "running" ? "" : `<span class="code">${c.output_lines} ln</span>`;
     return `<div class="row${isNew("cmds", c.item_id)}" onclick="toggle('${esc(key)}')">
-      <span class="dot ${st}"></span><span class="cmd" title="${esc(c.display)}">${esc(c.display.split("\n")[0])}</span>${code}
+      <span class="dot ${st}"></span><span class="cmd" title="${esc(c.display)}">${esc(c.headline)}</span>${code}
     </div>${open.has(key) ? `<pre class="tail">${esc(c.output_tail || "(no output)")}</pre>` : ""}`;
   }).join("");
   return `<section class="panel"><h2>Commands <span class="n">${cmds.length}</span></h2>${rows || '<div class="empty">No commands yet.</div>'}</section>`;
@@ -493,7 +497,7 @@ function asksPanel() {
   if (!asks.length) return "";
   return `<section class="panel asks"><h2>Needs you <span class="n">${asks.length}</span></h2>${asks.map((a) => `<div class="ask">
     <div class="q">${esc(a.title)}</div>${subject(a.subject) ? `<div class="subject">${esc(subject(a.subject))}</div>` : ""}
-    <div class="opts">${a.options.map((o) => `<button class="opt ${/^allow/.test(o.kind || "") ? "allow" : /^reject/.test(o.kind || "") ? "reject" : ""}" disabled title="Replay: answers are recorded">${esc(o.label)}</button>`).join("")}</div>
+    <div class="opts">${a.options.map((o) => `<button class="opt ${o.kind?.startsWith("allow") ? "allow" : o.kind?.startsWith("reject") ? "reject" : ""}" disabled title="Replay: answers are recorded">${esc(o.label)}</button>`).join("")}</div>
   </div>`).join("")}</section>`;
 }
 function subagentsPanel() {

@@ -384,9 +384,11 @@
         "turn": 0,
         "command": "/usr/bin/zsh -lc \"pwd && rg --files -g 'AGENTS.md' -g 'inventory.py' -g 'test_inventory.py' -g 'README.md'\"",
         "display": "pwd && rg --files -g 'AGENTS.md' -g 'inventory.py' -g 'test_inventory.py' -g 'README.md'",
+        "headline": "pwd && rg --files -g 'AGENTS.md' -g 'inventory.py' -g 'test_inventory.py' -g 'README.md'",
         "cwd": "/work",
         "status": "completed",
         "exit_code": 0,
+        "outcome": "succeeded",
         "output_tail": "/work\ninventory.py\ntest_inventory.py\nAGENTS.md",
         "output_lines": 4,
         "started_at_ms": null,
@@ -398,9 +400,11 @@
         "turn": 0,
         "command": "/usr/bin/zsh -lc 'cat AGENTS.md && cat inventory.py && cat test_inventory.py'",
         "display": "cat AGENTS.md && cat inventory.py && cat test_inventory.py",
+        "headline": "cat AGENTS.md && cat inventory.py && cat test_inventory.py",
         "cwd": "/work",
         "status": "completed",
         "exit_code": 0,
+        "outcome": "succeeded",
         "output_tail": "def total_value(items):\n    \"\"\"Sum price * quantity over items.\"\"\"\n    return sum(i[\"price\"] for i in items)\n\n\ndef low_stock(items, threshold=5):\n    \"\"\"Names of items with quantity below the threshold.\"\"\"\n    return [i[\"name\"] for i in items if i[\"quantity\"] <= threshold]\n\n\ndef restock(items, name, amount):\n    for i in items:\n        if i[\"name\"] == name:\n            i[\"quantity\"] += amount\n    return items\nimport unittest\n\nfrom inventory import low_stock, restock, total_value\n\nITEMS = [\n    {\"name\": \"bolt\", \"price\": 0.5, \"quantity\": 100},\n    {\"name\": \"nut\", \"price\": 0.25, \"quantity\": 5},\n    {\"name\": \"gear\", \"price\": 12.0, \"quantity\": 2},\n]\n\n\nclass InventoryTest(unittest.TestCase):\n    def test_total_value(self):\n        self.assertAlmostEqual(total_value(ITEMS), 50 + 1.25 + 24)\n\n    def test_low_stock(self):\n        self.assertEqual(low_stock(ITEMS), [\"gear\"])\n\n    def test_restock_unknown(self):\n        with self.assertRaises(KeyError):\n            restock([dict(i) for i in ITEMS], \"washer\", 3)\n\n\nif __name__ == \"__main__\":\n    unittest.main()",
         "output_lines": 52,
         "started_at_ms": null,
@@ -412,9 +416,11 @@
         "turn": 0,
         "command": "/usr/bin/zsh -lc 'python3 -m unittest'",
         "display": "python3 -m unittest",
+        "headline": "python3 -m unittest",
         "cwd": "/work",
         "status": "completed",
         "exit_code": 0,
+        "outcome": "succeeded",
         "output_tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK",
         "output_lines": 5,
         "started_at_ms": null,
@@ -426,9 +432,11 @@
         "turn": 1,
         "command": "/usr/bin/zsh -lc 'pwd && rg --files'",
         "display": "pwd && rg --files",
+        "headline": "pwd && rg --files",
         "cwd": "/work",
         "status": "completed",
         "exit_code": 0,
+        "outcome": "succeeded",
         "output_tail": "/work\ninventory.py\ntest_inventory.py\n__pycache__/test_inventory.cpython-314.pyc\n__pycache__/inventory.cpython-314.pyc\nAGENTS.md\nCLAUDE.md\nREADME.md",
         "output_lines": 8,
         "started_at_ms": null,
@@ -440,9 +448,11 @@
         "turn": 1,
         "command": "/usr/bin/zsh -lc 'cat inventory.py && cat test_inventory.py && cat README.md'",
         "display": "cat inventory.py && cat test_inventory.py && cat README.md",
+        "headline": "cat inventory.py && cat test_inventory.py && cat README.md",
         "cwd": "/work",
         "status": "completed",
         "exit_code": 0,
+        "outcome": "succeeded",
         "output_tail": "import unittest\n\nfrom inventory import low_stock, restock, total_value\n\nITEMS = [\n    {\"name\": \"bolt\", \"price\": 0.5, \"quantity\": 100},\n    {\"name\": \"nut\", \"price\": 0.25, \"quantity\": 5},\n    {\"name\": \"gear\", \"price\": 12.0, \"quantity\": 2},\n]\n\n\nclass InventoryTest(unittest.TestCase):\n    def test_total_value(self):\n        self.assertAlmostEqual(total_value(ITEMS), 50 + 1.25 + 24)\n\n    def test_low_stock(self):\n        self.assertEqual(low_stock(ITEMS), [\"gear\"])\n\n    def test_restock_unknown(self):\n        with self.assertRaises(KeyError):\n            restock([dict(i) for i in ITEMS], \"washer\", 3)\n\n    def test_restock_known(self):\n        items = [dict(i) for i in ITEMS]\n        self.assertIs(restock(items, \"nut\", 3), items)\n        self.assertEqual(items[1][\"quantity\"], 8)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n# Inventory module\n\n`inventory.py` provides small helpers for working with a list of inventory\nitems. Each item is a dictionary with `name`, `price`, and `quantity` fields.\n\n- `total_value(items)` returns the sum of each item's price times its quantity.\n- `low_stock(items, threshold=5)` returns names of items with quantity below\n  the threshold.\n- `restock(items, name, amount)` adds the amount to a matching item and returns\n  the same list. It raises `KeyError` if no item has that name.",
         "output_lines": 59,
         "started_at_ms": null,
@@ -487,6 +497,7 @@
           "exec-a7bd05f6-2c2c-49d7-a539-c4dc6096355e",
           "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b"
         ],
+        "steps": 10,
         "digest": {
           "files_changed": 3,
           "files_created": 1,
@@ -497,7 +508,23 @@
           "commands": 3,
           "commands_failed": 0,
           "subagents": 0,
-          "tools": 0
+          "tools": 0,
+          "parts": [
+            {
+              "kind": "edited",
+              "files": 3,
+              "created": 1,
+              "deleted": 0,
+              "added": 19,
+              "removed": 3
+            },
+            {
+              "kind": "ran",
+              "commands": 3,
+              "failed": 0
+            }
+          ],
+          "summary": "Edited 3 files (+19 −3) · ran 3 commands"
         },
         "outcome": "done",
         "open": false,
@@ -518,6 +545,7 @@
           "call_da727b2da2e94b97a0b0fba82055d675",
           "msg_0993cc73a52b2497016afa2f831fbc87d29d064025e679d60b"
         ],
+        "steps": 4,
         "digest": {
           "files_changed": 0,
           "files_created": 0,
@@ -528,7 +556,19 @@
           "commands": 2,
           "commands_failed": 0,
           "subagents": 1,
-          "tools": 0
+          "tools": 0,
+          "parts": [
+            {
+              "kind": "ran",
+              "commands": 2,
+              "failed": 0
+            },
+            {
+              "kind": "subagents",
+              "count": 1
+            }
+          ],
+          "summary": "Ran 2 commands · 1 subagent"
         },
         "outcome": "done",
         "open": false,

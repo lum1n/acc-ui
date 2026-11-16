@@ -8,8 +8,8 @@
 mod common;
 
 use acc_ui::SessionView;
-use acc_ui::session::event::ItemKind;
-use acc_ui::session::{ActivityKind, Digest, Event, TurnOutcome};
+use acc_ui::session::event::{ItemKind, OptionKind};
+use acc_ui::session::{ActivityKind, CommandOutcome, Digest, DigestPart, Event, TurnOutcome};
 use serde_json::{Value, json};
 
 fn replay(lines: &str) -> (SessionView, Vec<Value>) {
@@ -344,6 +344,149 @@ fn digest_summaries() {
         d.summary(),
         "Edited 3 files (+19 −3) · read 1 file · ran 3 commands, 1 failed · 1 subagent"
     );
+}
+
+#[test]
+fn digest_parts_are_structured() {
+    let d = Digest {
+        files_changed: 2,
+        files_created: 1,
+        lines_added: 5,
+        lines_removed: 1,
+        commands: 2,
+        commands_failed: 1,
+        tools: 1,
+        ..Digest::default()
+    };
+    let parts = d.parts();
+    assert_eq!(
+        parts,
+        [
+            DigestPart::Edited {
+                files: 2,
+                created: 1,
+                deleted: 0,
+                added: 5,
+                removed: 1
+            },
+            DigestPart::Ran {
+                commands: 2,
+                failed: 1
+            },
+            DigestPart::Tools { count: 1 },
+        ]
+    );
+    assert_eq!(parts.iter().filter(|p| p.is_warning()).count(), 1);
+    let v = serde_json::to_value(&d).unwrap();
+    assert_eq!(v["parts"][1], json!({"kind":"ran","commands":2,"failed":1}));
+    assert_eq!(
+        v["summary"],
+        "Edited 2 files (+5 −1) · ran 2 commands, 1 failed · 1 other tool"
+    );
+    assert!(Digest::default().parts().is_empty());
+}
+
+#[test]
+fn commands_get_an_outcome_and_a_headline() {
+    let mut view = SessionView::new();
+    let cmd = |id: &str, command: &str, status: &str, exit: Value| {
+        json!({"type":"item_completed","id":id,"status":status,
+               "detail":{"type":"command","tool":"Bash","command":command,"output":"","exit_code":exit}})
+    };
+    let start = |id: &str| {
+        json!({"type":"item_started","id":id,"kind":"command_execution",
+               "detail":{"type":"command","tool":"Bash","command":"x","output":""}})
+    };
+    let long = "echo ".to_owned() + &"a".repeat(200);
+    apply(
+        &mut view,
+        &[
+            start("ok"),
+            cmd("ok", "zsh -lc 'cargo test'", "completed", json!(0)),
+            start("bad"),
+            cmd("bad", "false", "completed", json!(1)),
+            start("err"),
+            cmd("err", "ls", "failed", Value::Null),
+            start("unk"),
+            cmd("unk", "cat a\ncat b", "completed", Value::Null),
+            start("long"),
+            cmd("long", &long, "completed", Value::Null),
+            start("run"),
+        ],
+    );
+    let c: Vec<_> = view
+        .commands()
+        .iter()
+        .map(|c| (c.outcome, c.headline.as_str()))
+        .collect();
+    assert_eq!(c[0], (CommandOutcome::Succeeded, "cargo test"));
+    assert_eq!(c[1], (CommandOutcome::Failed, "false"));
+    assert_eq!(c[2].0, CommandOutcome::Failed);
+    assert_eq!(c[3].0, CommandOutcome::Unknown);
+    assert_eq!(c[5].0, CommandOutcome::Running);
+    assert_eq!(c[4].1.chars().count(), acc_ui::session::HEADLINE_CHARS);
+    assert!(c[4].1.ends_with('…'));
+    assert_eq!(view.turns()[0].digest.commands_failed, 2);
+
+    let mut view = SessionView::new();
+    apply(
+        &mut view,
+        &[
+            start("m"),
+            json!({"type":"item_completed","id":"m","status":"completed",
+                   "detail":{"type":"command","tool":"Bash","command":"cd x\n\nmake","output":""}}),
+        ],
+    );
+    assert_eq!(view.commands()[0].headline, "cd x …");
+}
+
+#[test]
+fn turns_count_the_steps_they_fold() {
+    let mut view = SessionView::new();
+    let item =
+        |id: &str, kind: &str| json!({"type":"item_started","id":id,"kind":kind,"detail":{"type":"text"}});
+    apply(&mut view, &[item("u", "user_message"), item("r", "reasoning")]);
+    assert_eq!(view.turns()[0].steps, 1);
+    apply(&mut view, &[item("a1", "agent_message")]);
+    assert_eq!(view.turns()[0].steps, 1, "the latest message is the narrative");
+    apply(
+        &mut view,
+        &[
+            json!({"type":"item_started","id":"c","kind":"command_execution","detail":{"type":"command","command":"ls"}}),
+            item("a2", "agent_message"),
+        ],
+    );
+    let t = &view.turns()[0];
+    assert_eq!((t.steps, t.narrative_item.as_deref()), (3, Some("a2")));
+}
+
+#[test]
+fn ask_options_say_what_they_do() {
+    let mut view = SessionView::new();
+    apply(
+        &mut view,
+        &[
+            json!({"type":"permission_requested","request_id":"r","title":"Bash",
+                 "options":[{"id":"a","label":"Allow","kind":"allow_once"},
+                            {"id":"aa","label":"Always","kind":"allow_always"},
+                            {"id":"d","label":"Deny","kind":"reject_once"},
+                            {"id":"x","label":"Odd","kind":"something_new"},
+                            {"id":"n","label":"None"}]}),
+        ],
+    );
+    let kinds: Vec<_> = view.asks()[0].options.iter().map(|o| o.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            Some(OptionKind::AllowOnce),
+            Some(OptionKind::AllowAlways),
+            Some(OptionKind::RejectOnce),
+            Some(OptionKind::Other),
+            None
+        ]
+    );
+    assert!(OptionKind::AllowAlways.allows() && OptionKind::AllowAlways.persists());
+    assert!(OptionKind::RejectOnce.rejects() && !OptionKind::RejectOnce.persists());
 }
 
 fn apply(view: &mut SessionView, events: &[Value]) {
