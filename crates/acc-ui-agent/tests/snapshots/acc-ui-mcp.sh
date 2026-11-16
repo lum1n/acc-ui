@@ -163,11 +163,16 @@ ask() { # $1 request id token, $2 spec id token, $3 spec type
     return
   fi
   d="$DIR/$sid"
-  if ! mkdir -p "$d" 2>/dev/null; then
-    text_result "$1" "acc-ui: error: can't create the answer directory." ',"isError":true'
+  # Making the directory claims the id, so an id that waits or was answered
+  # keeps its call and its answer.
+  if ! { mkdir -p "$DIR" && mkdir "$d"; } 2>/dev/null; then
+    if [ -d "$d" ]; then
+      text_result "$1" "acc-ui: error: this spec.id was already used in this session; ask again with a new id." ',"isError":true'
+    else
+      text_result "$1" "acc-ui: error: can't create the answer directory." ',"isError":true'
+    fi
     return
   fi
-  rm -f "$d/answer.json" "$d/cancelled"
   printf '%s\n' "$1" >"$d/request"
   : >"$d/waiting"
   prune

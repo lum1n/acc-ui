@@ -242,10 +242,12 @@ fn ask_is_answered_through_the_file() {
     assert!(!dir.join("s1/pick-env/waiting").exists());
 
     // Dismissing.
+    let mut spec = spec;
+    spec["id"] = json!("pick-env-2");
     s.send(&tool_call(json!(12), "acc_ui_ask", json!({ "spec": spec })).to_string());
     std::thread::sleep(Duration::from_millis(300));
     run_sh(
-        &answer_script("s1", "pick-env", &Answer::Dismissed).unwrap(),
+        &answer_script("s1", "pick-env-2", &Answer::Dismissed).unwrap(),
         &dir,
     );
     let r = s.recv(Duration::from_secs(10)).expect("no answer");
@@ -346,6 +348,33 @@ fn concurrent_long_replies_dont_interleave() {
             listed += 1;
         }
     }
+}
+
+/// A spec id names one ask for the whole session: asking again with it,
+/// while the first waits or after it was answered, is an error that leaves
+/// the first ask and its answer alone.
+#[test]
+fn spec_ids_cant_be_reused() {
+    let dir = temp_dir("reuse");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    s.send(&tool_call(json!(20), "acc_ui_ask", json!({ "spec": badge_spec("dup") })).to_string());
+    let again = s.call(tool_call(json!(21), "acc_ui_ask", json!({ "spec": badge_spec("dup") })));
+    assert_eq!(again["result"]["isError"], true, "{again}");
+    assert!(text_of(&again).contains("already used"), "{again}");
+    assert!(dir.join("s1/dup/waiting").exists());
+
+    write_answer(&dir, "dup", &Answer::Dismissed);
+    let r = s.recv(Duration::from_secs(10)).expect("no answer");
+    assert_eq!(r["id"], 20);
+    assert!(text_of(&r).starts_with("acc-ui: dismissed"), "{r}");
+
+    let after = s.call(tool_call(json!(22), "acc_ui_ask", json!({ "spec": badge_spec("dup") })));
+    assert_eq!(after["result"]["isError"], true, "{after}");
+    assert!(dir.join("s1/dup/answer.json").exists());
+    // No late reply for the rejected calls.
+    assert!(s.recv(Duration::from_millis(1500)).is_none());
 }
 
 fn wait_exit(s: &mut Server, secs: u64) {
