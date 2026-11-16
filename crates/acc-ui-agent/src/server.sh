@@ -91,10 +91,7 @@ reply() { send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"result\":$2}"; }
 fail() { send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"error\":{\"code\":$2,\"message\":\"$3\"}}"; }
 text_result() { reply "$1" "{\"content\":[{\"type\":\"text\",\"text\":\"$2\"}]${3:-}}"; }
 
-TOOLS=$(cat <<'ACC_UI_TOOLS'
-@TOOLS@
-ACC_UI_TOOLS
-)
+TOOLS='@TOOLS@'
 
 ask() { # $1 request id token, $2 spec id token, $3 spec type
   if [ "$3" != o ]; then

@@ -79,7 +79,9 @@ pub fn server_script() -> String {
         debug_assert!(!v.contains(['"', '\\', '$', '`']), "{k}");
         s = s.replace(k, &v);
     }
-    s.replace("@TOOLS@", &tools)
+    // The tool list goes into single quotes, not a heredoc in `$(...)`,
+    // which bash 3.2 (macOS's sh) misparses when the text holds a quote.
+    s.replace("@TOOLS@", &tools.replace('\'', "'\\''"))
 }
 
 /// The `tools/list` result the server answers with. The spec schema goes
