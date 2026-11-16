@@ -16,8 +16,12 @@ nothing.
 | `crates/acc-ui-agent` | Opt-in: agents writing components themselves through the `acc_ui` MCP server or a spec skill | Yes, when enabled |
 | `crates/acc-ui-ffi` | UniFFI bindings for Swift and Kotlin, covering both | No |
 
-Renderers (the `AccUI` Swift package first) take the normalised render model and send
-actions out through a delegate. Clients such as Sessh wire it up.
+acc-ui is headless: it ships data, behaviour and semantics, never views or styling. How
+the agent view looks is up to each app. Apps read the session regions and the
+normalised components, lay them out and style them in their own toolkit (SwiftUI,
+GPUI, Compose, the web), and send actions back. Anything that isn't visual (labels,
+ordering, truncation, relative paths, what counts as failed, what changed) belongs in
+acc-ui, so every app gets the same behaviour while drawing it its own way.
 
 ## The session model
 
@@ -54,6 +58,19 @@ The recorded sessions in `crates/acc-ui/tests/sessions` (Claude Code and Codex f
 a bug, then delegating a review to a subagent) replay into golden
 `<name>.session.json` files. Record new ones with `scripts/record-fixture.py` against
 a built `acc`.
+
+### Replay
+
+```sh
+cargo run -p acc-ui --example replay -- crates/acc-ui/tests/sessions/claude-fix-and-review.ndjson \
+    --root /work --html /tmp/replay.html
+```
+
+Plays a recorded session back through `SessionView` in a throwaway web viewer. Each frame
+carries only the regions its event changed. Space plays and pauses, the arrow keys step,
+and `?frame=N` or `?frame=end` opens at a frame. Without `--html`, the frames go to stdout
+as NDJSON. The viewer is a development tool for looking at the session model on real
+sessions. Its look is not part of acc-ui.
 
 ## The render model
 

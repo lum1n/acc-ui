@@ -471,7 +471,7 @@
       {
         "index": 0,
         "prompt": "First write a plan with the update_plan tool and keep it updated as you go. Make every file change with apply_patch, never with shell scripts. Then: fix inventory.py so every test in test_inventory.py passes (restock must raise KeyError for an unknown name), add a test for restocking a known item, and write a short README.md for the module. Run `python3 -m unittest` at the end to confirm.",
-        "narrative": "Implemented the inventory fixes, added a test for restocking a known item, and wrote [README.md](/tmp/acc-ui-codex/README.md). `python3 -m unittest` passes all 4 tests.\n\nThe requested `update_plan` tool wasn’t available in this environment, so I couldn’t create or update a tool-based plan.",
+        "narrative": "Implemented the inventory fixes, added a test for restocking a known item, and wrote [README.md](/work/README.md). `python3 -m unittest` passes all 4 tests.\n\nThe requested `update_plan` tool wasn’t available in this environment, so I couldn’t create or update a tool-based plan.",
         "narrative_item": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b",
         "items": [
           "01a1e149-0d95-7d43-a395-4e7e34b00731",
@@ -628,7 +628,7 @@
         "parent": null,
         "turn": 0,
         "status": "completed",
-        "text": "Implemented the inventory fixes, added a test for restocking a known item, and wrote [README.md](/tmp/acc-ui-codex/README.md). `python3 -m unittest` passes all 4 tests.\n\nThe requested `update_plan` tool wasn’t available in this environment, so I couldn’t create or update a tool-based plan."
+        "text": "Implemented the inventory fixes, added a test for restocking a known item, and wrote [README.md](/work/README.md). `python3 -m unittest` passes all 4 tests.\n\nThe requested `update_plan` tool wasn’t available in this environment, so I couldn’t create or update a tool-based plan."
       },
       {
         "id": "01a1e149-63df-7071-9edd-03d1b255b7a8",
