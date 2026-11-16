@@ -216,9 +216,10 @@ pub struct CommandEntry {
     pub exit_code: Option<i32>,
     /// Whether it worked, as far as anyone can tell.
     pub outcome: CommandOutcome,
-    /// `outcome` was read from the output (a test summary, a compiler's
-    /// errors) rather than taken from the exit code: Claude Code reports
-    /// none, and `cargo test | tail` exits with `tail`'s code.
+    /// `outcome` wasn't taken from an exit code: it was read from the
+    /// output (a test summary, a compiler's errors; `cargo test | tail`
+    /// exits with `tail`'s code), or it is a Claude Code command that
+    /// completed, which Claude only reports for a zero exit.
     pub outcome_inferred: bool,
     /// What kind of work it does; [`CommandKind::Other`] unless every part
     /// of the command was understood.
@@ -265,12 +266,20 @@ impl CommandOutcome {
     /// The outcome from the exit code, corrected by what the output says
     /// (`verdict`), and whether that correction decided it. Failed tests
     /// fail a command that exited 0 (output piped through `tail`); a
-    /// passing summary only counts when there is no exit code.
-    pub(crate) fn judge(status: ItemStatus, exit_code: Option<i32>, verdict: Option<bool>) -> (Self, bool) {
+    /// passing summary only counts when there is no exit code. Without
+    /// either, `zero_if_completed` (the harness marks non-zero exits as
+    /// failed and this was one simple command) makes it a success.
+    pub(crate) fn judge(
+        status: ItemStatus,
+        exit_code: Option<i32>,
+        verdict: Option<bool>,
+        zero_if_completed: bool,
+    ) -> (Self, bool) {
         let plain = Self::of(status, exit_code);
         let judged = match (plain, verdict) {
             (Self::Succeeded | Self::Unknown, Some(false)) => Self::Failed,
             (Self::Unknown, Some(true)) => Self::Succeeded,
+            (Self::Unknown, None) if zero_if_completed => Self::Succeeded,
             (o, _) => o,
         };
         (judged, judged != plain)

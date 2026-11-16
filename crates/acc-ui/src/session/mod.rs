@@ -568,7 +568,12 @@ impl SessionView {
         if item.status != ItemStatus::Running {
             rec.read_output(output);
         }
-        let (outcome, outcome_inferred) = CommandOutcome::judge(item.status, *exit_code, rec.verdict);
+        // Claude Code marks a Bash call that exits non-zero as an error, so
+        // one that completed exited 0, unless a pipe or `;` hid the status.
+        let zero_if_completed =
+            self.header.harness.as_deref() == Some("claude") && command::is_simple(&display);
+        let (outcome, outcome_inferred) =
+            CommandOutcome::judge(item.status, *exit_code, rec.verdict, zero_if_completed);
         let entry = CommandEntry {
             item_id: item.id.clone(),
             parent: item.parent.clone(),

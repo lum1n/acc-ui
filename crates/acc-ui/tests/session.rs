@@ -835,3 +835,55 @@ fn recognised_commands_feed_outcomes_files_and_digests() {
         "Read 2 files · ran 4 commands, 1 failed · 4 tests passed"
     );
 }
+
+#[test]
+fn completed_simple_claude_commands_succeeded() {
+    let output = |c: &str| {
+        if c.starts_with("pytest") {
+            "1 failed, 2 passed in 0.1s"
+        } else {
+            "x"
+        }
+    };
+    let run = |harness: &str, command: &str, status: &str| {
+        let mut view = SessionView::new();
+        apply(
+            &mut view,
+            &[
+                json!({"type":"session_started","harness":harness,"native_id":"n"}),
+                json!({"type":"item_started","id":"c","kind":"command_execution",
+                       "detail":{"type":"command","tool":"Bash","command":command,"output":""}}),
+                json!({"type":"item_completed","id":"c","status":status,
+                       "detail":{"type":"command","tool":"Bash","command":command,"output":output(command),"exit_code":null}}),
+            ],
+        );
+        let c = view.command("c").unwrap();
+        (c.outcome, c.outcome_inferred)
+    };
+    assert_eq!(
+        run("claude", "ls -la", "completed"),
+        (CommandOutcome::Succeeded, true)
+    );
+    assert_eq!(
+        run("claude", "make deploy 2>&1", "completed"),
+        (CommandOutcome::Succeeded, true)
+    );
+    assert_eq!(
+        run("claude", "ls | head", "completed"),
+        (CommandOutcome::Unknown, false)
+    );
+    assert_eq!(
+        run("claude", "./x.sh || true", "completed"),
+        (CommandOutcome::Unknown, false)
+    );
+    assert_eq!(run("claude", "ls", "failed"), (CommandOutcome::Failed, false));
+    assert_eq!(
+        run("opencode", "ls", "completed"),
+        (CommandOutcome::Unknown, false)
+    );
+    // What the output says still wins.
+    assert_eq!(
+        run("claude", "pytest -q", "completed"),
+        (CommandOutcome::Failed, true)
+    );
+}

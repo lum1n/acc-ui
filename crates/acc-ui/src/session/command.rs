@@ -176,6 +176,15 @@ pub(crate) fn recognise(command: &str, cwd: Option<&str>) -> Recognised {
     }
 }
 
+/// Whether `command` is one simple command: no pipe, `;`, `&&`, `||`,
+/// `&` or newline, and nothing the lexer gives up on. Its exit status is
+/// then its program's own.
+pub(crate) fn is_simple(command: &str) -> bool {
+    lex(command).is_some_and(|t| {
+        t.iter().any(|t| matches!(t, Tok::Word(..))) && !t.iter().any(|t| matches!(t, Tok::Pipe | Tok::Sep))
+    })
+}
+
 // Lexing
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1005,6 +1014,26 @@ mod tests {
         r.read_output("hello\ncat: b: No such file or directory\n");
         assert_eq!(r.reads.len(), 1);
         assert_eq!(r.reads[0].path, "/w/a");
+    }
+
+    #[test]
+    fn simple_commands() {
+        for c in ["cargo build", "ls -la > out.txt 2>&1", "echo 'a | b; c'"] {
+            assert!(is_simple(c), "{c}");
+        }
+        for c in [
+            "a | b",
+            "a; b",
+            "a && b",
+            "a || true",
+            "a &",
+            "a\nb",
+            "echo $(x)",
+            "",
+            "zsh -lc 'x",
+        ] {
+            assert!(!is_simple(c), "{c}");
+        }
     }
 
     #[test]
