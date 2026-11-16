@@ -137,3 +137,24 @@ fn setup_script_is_content_addressed() {
     let path_line = s.lines().find(|l| l.starts_with("f=")).unwrap();
     assert!(path_line.contains("/acc-ui-mcp-"), "{path_line}");
 }
+
+#[test]
+fn submit_ids_are_escaped_and_restored() {
+    let v = values(json!({ "a": 1 }));
+    let id = r#"a"b<c>&amp;d"#;
+    let prompt = submit_prompt(id, &v);
+    assert!(!prompt.contains("a\"b"), "quote must be escaped: {prompt}");
+    let s = parse_submit(&prompt).unwrap();
+    assert_eq!(s.id, id);
+    assert_eq!(s.values, v);
+    assert_eq!(s.rest, "");
+}
+
+#[test]
+fn submit_rest_keeps_text_on_both_sides() {
+    let prompt = submit_prompt("x", &values(json!({})));
+    let s = parse_submit(&format!("before\n{prompt}\nafter")).unwrap();
+    assert_eq!(s.rest, "before after");
+    let s = parse_submit(&format!("  {prompt}  ")).unwrap();
+    assert_eq!(s.rest, "");
+}
