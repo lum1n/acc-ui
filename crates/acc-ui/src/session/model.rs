@@ -334,7 +334,9 @@ pub struct Turn {
     /// reasoning are in `items`, for apps that fold them away.
     pub narrative: Option<String>,
     pub narrative_item: Option<String>,
-    /// The main conversation's items in this turn, in order.
+    /// The main conversation's items in this turn, in order. Reasoning
+    /// joins once it has text (Codex sends empty reasoning when summaries
+    /// are off), so every item here has something to show.
     pub items: Vec<String>,
     /// Items an app folds away under the prompt: everything in `items`
     /// but user messages and the narrative.

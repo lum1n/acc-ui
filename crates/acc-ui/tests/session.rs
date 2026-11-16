@@ -448,6 +448,11 @@ fn turns_count_the_steps_they_fold() {
     let item =
         |id: &str, kind: &str| json!({"type":"item_started","id":id,"kind":kind,"detail":{"type":"text"}});
     apply(&mut view, &[item("u", "user_message"), item("r", "reasoning")]);
+    assert_eq!(view.turns()[0].steps, 0, "reasoning counts once it has text");
+    apply(
+        &mut view,
+        &[json!({"type":"item_delta","id":"r","text":"Look first."})],
+    );
     assert_eq!(view.turns()[0].steps, 1);
     apply(&mut view, &[item("a1", "agent_message")]);
     assert_eq!(view.turns()[0].steps, 1, "the latest message is the narrative");
@@ -460,6 +465,44 @@ fn turns_count_the_steps_they_fold() {
     );
     let t = &view.turns()[0];
     assert_eq!((t.steps, t.narrative_item.as_deref()), (3, Some("a2")));
+}
+
+#[test]
+fn reasoning_without_text_shows_nothing() {
+    let mut view = SessionView::new();
+    let start =
+        |id: &str, kind: &str| json!({"type":"item_started","id":id,"kind":kind,"detail":{"type":"text"}});
+    let done =
+        |id: &str| json!({"type":"item_completed","id":id,"status":"completed","detail":{"type":"text"}});
+    apply(
+        &mut view,
+        &[
+            start("u", "user_message"),
+            // Codex with summaries off: no text, ever.
+            start("r1", "reasoning"),
+            done("r1"),
+            // Text arrives after a later item started: still in order.
+            start("r2", "reasoning"),
+            json!({"type":"item_started","id":"c","kind":"command_execution","detail":{"type":"command","command":"ls"}}),
+            json!({"type":"item_delta","id":"r2","text":"  "}),
+            json!({"type":"item_delta","id":"r2","text":"Check the tests."}),
+            done("r2"),
+        ],
+    );
+    assert!(view.item_spec("r1").is_none());
+    let t = &view.turns()[0];
+    assert_eq!(t.items, ["u", "r2", "c"]);
+    assert_eq!(t.steps, 2);
+    let spec = view.item_spec("r2").unwrap().spec.unwrap();
+    assert_eq!(spec["nodes"][0]["summary"], "Thought");
+    // Running and still empty: Now says thinking, but there is no spec.
+    apply(&mut view, &[start("r3", "reasoning")]);
+    assert!(view.item_spec("r3").is_none());
+    let now = view.now();
+    assert_eq!(
+        now.last().map(|a| (a.item_id.as_str(), a.kind)),
+        Some(("r3", ActivityKind::Thinking))
+    );
 }
 
 #[test]

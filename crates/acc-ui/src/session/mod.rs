@@ -406,7 +406,9 @@ impl SessionView {
             None if parent.is_none() && kind == ItemKind::UserMessage => self.new_turn(ch),
             None => self.open_turn(ch),
         };
-        if parent.is_none() {
+        // Reasoning joins the turn once it has text: Codex sends empty
+        // reasoning items when summaries are off, and they show nothing.
+        if parent.is_none() && kind != ItemKind::Reasoning {
             let t = &mut self.turns[turn];
             t.items.push(id.clone());
             if kind == ItemKind::AgentMessage {
@@ -477,9 +479,13 @@ impl SessionView {
             // ACC's stand-in for an image-only prompt, when it sent refs.
             Detail::Text if text == IMAGE_PLACEHOLDER && item.text.is_empty() && !item.images.is_empty() => {}
             Detail::Text => {
+                let was_blank = item.text.trim().is_empty();
                 item.text.push_str(text);
                 Changes::push(&mut ch.items, id.to_owned());
                 let (kind, parent, turn) = (item.kind, item.parent.is_none(), item.turn);
+                if kind == ItemKind::Reasoning && parent && was_blank && !text.trim().is_empty() {
+                    self.reasoning_shown(i, ch);
+                }
                 let t = &mut self.turns[turn];
                 if t.narrative_item.as_deref() == Some(id) {
                     t.narrative.get_or_insert_with(String::new).push_str(text);
@@ -498,6 +504,21 @@ impl SessionView {
             }
             _ => {}
         }
+    }
+
+    /// Reasoning item `i` got its first text: it joins its turn's items,
+    /// in order, as a step.
+    fn reasoning_shown(&mut self, i: usize, ch: &mut Changes) {
+        let item = &self.items[i];
+        let t = &mut self.turns[item.turn];
+        let at = t
+            .items
+            .iter()
+            .position(|other| self.item_index.get(other).is_some_and(|&o| o > i))
+            .unwrap_or(t.items.len());
+        t.items.insert(at, item.id.clone());
+        t.steps += 1;
+        Changes::push(&mut ch.turns, item.turn);
     }
 
     /// A new detail, from a start, update or completion. `status` is set

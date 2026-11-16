@@ -557,19 +557,15 @@
         "narrative_item": "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b",
         "items": [
           "01a1e149-0d95-7d43-a395-4e7e34b00731",
-          "rs_0993cc73a52b2497016afa2f61301c87d2a8005beec9f6ac1c",
           "msg_0993cc73a52b2497016afa2f615e2487d28b991cd04e48467b",
           "exec-60a0108d-238b-49a4-9d31-f9519c1544ba",
-          "rs_0993cc73a52b2497016afa2f64d34c87d2a1f24f8dd83a54b5",
           "exec-40d855c7-6d0c-4026-b475-ee7d88e8feb8",
-          "rs_0993cc73a52b2497016afa2f6814fc87d29873ccb11092ca46",
           "exec-3bf4e768-f5eb-4ea8-9b2e-d97be3642b18",
-          "rs_0993cc73a52b2497016afa2f71837887d2ad6fcfd314a89e0e",
           "msg_0993cc73a52b2497016afa2f71a3bc87d2a83caf1875a2b64b",
           "exec-a7bd05f6-2c2c-49d7-a539-c4dc6096355e",
           "msg_0993cc73a52b2497016afa2f742f9887d2993fd1b9d524ed2b"
         ],
-        "steps": 10,
+        "steps": 6,
         "digest": {
           "files_changed": 3,
           "files_created": 1,
@@ -626,13 +622,11 @@
         "narrative_item": "msg_0993cc73a52b2497016afa2f831fbc87d29d064025e679d60b",
         "items": [
           "01a1e149-63df-7071-9edd-03d1b255b7a8",
-          "rs_0993cc73a52b2497016afa2f778d7087d2a6a89fecdf5cd5b7",
           "call_7591283841314046888efa87151e297d",
-          "rs_0993cc73a52b2497016afa2f79c24487d2852f099537902c58",
           "call_da727b2da2e94b97a0b0fba82055d675",
           "msg_0993cc73a52b2497016afa2f831fbc87d29d064025e679d60b"
         ],
-        "steps": 4,
+        "steps": 2,
         "digest": {
           "files_changed": 0,
           "files_created": 0,

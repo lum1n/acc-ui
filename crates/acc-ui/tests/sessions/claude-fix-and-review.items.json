@@ -7,13 +7,6 @@
     "summary": ""
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "tool_call",
     "nodes": [
       "disclosure",
@@ -36,13 +29,6 @@
       "code"
     ],
     "summary": "Read test_inventory.py"
-  },
-  {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
   },
   {
     "kind": "agent_message",

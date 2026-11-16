@@ -459,11 +459,9 @@
         "narrative_item": "msg_011Ch5VFksT8U1VKXxN8HJPx:0",
         "items": [
           "986aee7d-0696-4076-8583-64c1d0f6f9c6",
-          "msg_011Ch5VEvCFpBpCrSHJaGZM3:0",
           "toolu_01TkzirFg4mFrwpoLhpvgrqP",
           "toolu_01GHNwv72bPJqMpS1QaTvdcc",
           "toolu_01LzRnsJPc6wRnRzCJfyZFR3",
-          "msg_011Ch5VF8ST57NB9p3yoaPN2:0",
           "msg_011Ch5VF8ST57NB9p3yoaPN2:1",
           "toolu_014Nj1RXMhi7MzG9FSzSRWCu",
           "toolu_014mX364UecMB5GsBxnznC6A",
@@ -473,7 +471,7 @@
           "toolu_01PCKE9RYeNBPD8xW9ac6eAw",
           "msg_011Ch5VFksT8U1VKXxN8HJPx:0"
         ],
-        "steps": 12,
+        "steps": 10,
         "digest": {
           "files_changed": 3,
           "files_created": 1,

@@ -15,7 +15,8 @@ use crate::normalize::{Normalized, normalize_trusted, normalize_value, valid_id}
 impl SessionView {
     /// Item `id` as a spec: messages as blocks, reasoning, commands, file
     /// changes, tool calls and subagent runs as a `disclosure` whose summary
-    /// says what happened and whose children show it.
+    /// says what happened and whose children show it. `None` for items
+    /// with nothing to show: reasoning without text, unknown details.
     pub fn item_spec(&self, id: &str) -> Option<Normalized> {
         let item = self.item(id)?;
         let root = self.header.root.as_deref();
@@ -30,6 +31,8 @@ impl SessionView {
                 }
                 json!({ "type": "stack", "children": children })
             }
+            // Codex sends reasoning without text when summaries are off.
+            (Detail::Text, ItemKind::Reasoning) if item.text.trim().is_empty() => return None,
             (Detail::Text, ItemKind::Reasoning) => json!({
                 "type": "disclosure",
                 "summary": if item.status == ItemStatus::Running { "Thinking" } else { "Thought" },
