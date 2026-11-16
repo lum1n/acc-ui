@@ -252,6 +252,12 @@ fn transcripts_restore_the_same_regions_as_live_events() {
                 json!({"turns": turns, "files": files, "commands": commands, "subagents": subagents, "now": s.now.len()})
             };
             assert_eq!(strip(&restored), strip(&live), "{name} from {from}");
+            // Without the snapshot's spec, the harness comes from the items.
+            assert_eq!(
+                restored.header().harness,
+                live.header().harness,
+                "{name} from {from}"
+            );
             if from == "snapshot" {
                 assert_eq!(restored.header().title.as_deref(), Some("Saved"));
                 assert_eq!(restored.header().root.as_deref(), Some("/work"));
@@ -263,6 +269,40 @@ fn transcripts_restore_the_same_regions_as_live_events() {
             }
         }
     }
+}
+
+#[test]
+fn restoring_bare_items_infers_the_harness() {
+    let restore = |items: Value| SessionView::from_transcript(&items.to_string()).unwrap();
+    let bash = |id: &str| {
+        json!({"id":id,"kind":"command_execution","status":"completed","seq":1,
+               "detail":{"type":"command","tool":"Bash","command":"ls","output":"a"}})
+    };
+    let prompt = json!({"id":"u","kind":"user_message","status":"completed","text":"Go","detail":{"type":"text"},"seq":0});
+    let claude = restore(json!([prompt, bash("toolu_01A")]));
+    assert_eq!(claude.header().harness.as_deref(), Some("claude"));
+    // So the simple-command rule applies.
+    assert_eq!(claude.commands()[0].outcome, CommandOutcome::Succeeded);
+
+    let codex = json!({"id":"exec-1","kind":"command_execution","status":"completed","seq":2,
+        "detail":{"type":"command","tool":"commandExecution","command":"ls","output":"a"}});
+    assert_eq!(
+        restore(json!([prompt, codex])).header().harness.as_deref(),
+        Some("codex")
+    );
+    // A Bash tool without Claude's ids, or both kinds at once: unknown.
+    for items in [
+        json!([prompt, bash("call_1")]),
+        json!([prompt, bash("toolu_01A"), codex]),
+    ] {
+        let view = restore(items);
+        assert_eq!(view.header().harness, None);
+        assert_eq!(view.commands()[0].outcome, CommandOutcome::Unknown);
+    }
+    // A snapshot's own harness wins.
+    let snapshot =
+        json!({"spec": {"harness": "opencode"}, "transcript": {"items": [prompt, bash("toolu_01A")]}});
+    assert_eq!(restore(snapshot).header().harness.as_deref(), Some("opencode"));
 }
 
 #[test]

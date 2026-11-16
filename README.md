@@ -108,7 +108,9 @@ let view = SessionView::from_transcript(&saved)?; // an ACC session snapshot or 
 `apply_json` takes ACC's event JSON (a line of `acc run --json`) and returns the
 `Changes` it made; `file(path)`, `command(id)`, `subagent(id)`, `turn(index)` and
 `ask(request_id)` fetch just what changed. `from_transcript` rebuilds the same state from what ACC saved, for
-history and for sessions picked up without their events. acc-ui reads ACC's events with its own tolerant types, so unknown
+history and for sessions picked up without their events. Without a snapshot's spec it
+infers the harness only where the items leave no doubt (Claude Code's `toolu_` calls to
+its own tools, Codex's `commandExecution` items). acc-ui reads ACC's events with its own tolerant types, so unknown
 events and fields are ignored rather than failing.
 
 Images: ACC keeps image bytes out of its events and sends references instead (media
