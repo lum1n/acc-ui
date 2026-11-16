@@ -567,6 +567,7 @@ pub struct ItemView {
     pub text: String,
     #[serde(skip)]
     pub detail: Detail,
+    /// A command's output as it streamed; see [`ItemView::command_output`].
     #[serde(skip)]
     pub output: String,
     /// Images it carries: a prompt's attachments, an image a tool viewed
@@ -577,4 +578,16 @@ pub struct ItemView {
     pub started_at_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at_ms: Option<u64>,
+}
+
+impl ItemView {
+    /// A command's full output: what it completed with, or what streamed
+    /// so far while it runs. `None` for items that aren't commands.
+    pub fn command_output(&self) -> Option<&str> {
+        match &self.detail {
+            Detail::Command { output, .. } if !output.is_empty() => Some(output),
+            Detail::Command { .. } => Some(&self.output),
+            _ => None,
+        }
+    }
 }

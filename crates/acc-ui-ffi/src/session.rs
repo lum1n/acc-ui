@@ -955,8 +955,7 @@ impl From<s::Turn> for Turn {
     }
 }
 
-/// An item as the session keeps it. A command's full output isn't here;
-/// [`CommandEntry`] has its tail.
+/// An item as the session keeps it.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct Item {
     pub id: String,
@@ -967,6 +966,10 @@ pub struct Item {
     /// Message or reasoning text.
     pub text: String,
     pub detail: ItemDetail,
+    /// A command's full output: what it completed with, or what streamed
+    /// so far while it runs. `None` for other items. [`CommandEntry`] has
+    /// its tail.
+    pub output: Option<String>,
     /// A prompt's images, or the image a tool viewed or generated.
     pub images: Vec<ImageRef>,
     pub started_at_ms: Option<u64>,
@@ -975,12 +978,14 @@ pub struct Item {
 
 impl From<s::ItemView> for Item {
     fn from(i: s::ItemView) -> Self {
+        let output = i.command_output().map(str::to_owned);
         Self {
             id: i.id,
             kind: i.kind.into(),
             parent: i.parent,
             turn: n(i.turn),
             status: i.status.into(),
+            output,
             text: i.text,
             detail: i.detail.into(),
             images: images(i.images),

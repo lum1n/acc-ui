@@ -315,6 +315,8 @@ fn restoring_keeps_a_running_turn_open() {
     assert!(view.turns()[0].open);
     assert_eq!(view.now()[0].kind, ActivityKind::Building);
     assert_eq!(view.commands()[0].output_tail, "building");
+    assert_eq!(view.item("c").unwrap().command_output(), Some("building"));
+    assert_eq!(view.item("u").unwrap().command_output(), None);
 }
 
 #[test]

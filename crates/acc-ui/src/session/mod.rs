@@ -619,7 +619,6 @@ impl SessionView {
         let Detail::Command {
             command,
             cwd,
-            output,
             exit_code,
             ..
         } = &item.detail
@@ -636,7 +635,7 @@ impl SessionView {
             }
             ch.header = true;
         }
-        let output = if output.is_empty() { &item.output } else { output };
+        let output = item.command_output().unwrap_or_default();
         let (output_tail, output_lines) = tail(output);
         let display = unwrap_shell(command);
         let base = cwd.as_deref().or(self.header.root.as_deref());

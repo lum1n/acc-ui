@@ -113,6 +113,9 @@ fn session_view_restores_from_a_transcript_and_answers_asks() {
     let view = SessionView::from_transcript(transcript.to_owned()).unwrap();
     assert_eq!(view.turns()[0].prompt.as_deref(), Some("list files"));
     assert_eq!(view.commands()[0].outcome, CommandOutcome::Unknown);
+    let items = view.items();
+    assert_eq!(items[1].output.as_deref(), Some("a"), "a command's full output");
+    assert_eq!(items[0].output, None);
     assert!(SessionView::from_transcript("nope".to_owned()).is_err());
 
     let view = SessionView::new();
