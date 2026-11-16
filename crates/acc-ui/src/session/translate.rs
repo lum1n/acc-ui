@@ -7,10 +7,17 @@
 
 use serde_json::{Value, json};
 
-use super::event::{AskKind, Detail, FileChangeKind, ImageRef, ItemKind, ItemStatus, LineTag, OptionKind};
+use super::event::{
+    AskKind, Detail, FileChangeKind, ImageRef, ItemKind, ItemStatus, LineTag, OptionKind, ToolKind,
+};
 use super::{Ask, SessionView, display_path, first_line, unwrap_shell};
 use crate::blocks::blocks;
 use crate::normalize::{Normalized, normalize_trusted, normalize_value, valid_id};
+
+/// Most of a tool's output shown in an item spec, in characters.
+const CODE_CHARS: usize = 8000;
+/// Most files listed from a search's output.
+const LISTED_FILES: usize = 100;
 
 impl SessionView {
     /// Item `id` as a spec: messages as blocks, reasoning, commands, file
@@ -93,17 +100,41 @@ impl SessionView {
                 let children = output.as_deref().map(blocks).unwrap_or_default();
                 disclosure(format!("{who}{description}"), children)
             }
-            (Detail::Tool { output, .. }, _) => {
+            (
+                Detail::Tool {
+                    tool,
+                    kind,
+                    input,
+                    output,
+                    paths,
+                    ..
+                },
+                _,
+            ) => {
                 let activity = self.activity(item);
                 let summary = match &activity {
                     Some(a) if !a.target.is_empty() => format!("{} {}", a.kind.past_label(), a.target),
                     Some(a) => a.kind.past_label().to_owned(),
                     None => "Tool call".to_owned(),
                 };
-                let children = match output.as_deref().map(str::trim_end) {
+                let output = output.as_deref().map(str::trim_end).filter(|o| !o.is_empty());
+                let read_path = (*kind == ToolKind::Read)
+                    .then(|| {
+                        input
+                            .get("file_path")
+                            .and_then(Value::as_str)
+                            .or(paths.first().map(String::as_str))
+                    })
+                    .flatten()
+                    .filter(|p| !p.is_empty());
+                let children = match output {
                     _ if !item.images.is_empty() => image_nodes(&item.images),
-                    Some(o) if !o.is_empty() => vec![json!({ "type": "code", "text": tail_chars(o, 8000) })],
-                    _ => Vec::new(),
+                    _ if read_path.is_some() => {
+                        read_nodes(root, read_path.unwrap_or_default(), input, output)
+                    }
+                    Some(o) if lists_files(tool, input) => file_list_nodes(root, o),
+                    Some(o) => vec![json!({ "type": "code", "text": tail_chars(o, CODE_CHARS) })],
+                    None => Vec::new(),
                 };
                 disclosure(summary, children)
             }
@@ -241,6 +272,139 @@ fn diff_file(root: Option<&str>, f: &super::event::FileDiff) -> Value {
         file["old_path"] = display_path(root, old).into();
     }
     file
+}
+
+/// A file read: the file (at its first line when the read started
+/// further in), then what was read, as code in the file's language.
+fn read_nodes(root: Option<&str>, path: &str, input: &Value, output: Option<&str>) -> Vec<Value> {
+    let mut file = json!({ "type": "file", "path": display_path(root, path) });
+    if let Some(line) = input
+        .get("offset")
+        .and_then(Value::as_u64)
+        .filter(|l| *l > 0)
+        .and_then(|l| u32::try_from(l).ok())
+    {
+        file["line"] = line.into();
+    }
+    let mut nodes = vec![file];
+    if let Some(o) = output {
+        let text = strip_line_numbers(o).unwrap_or_else(|| o.to_owned());
+        let mut code = json!({ "type": "code", "text": head_chars(&text, CODE_CHARS) });
+        if let Some(lang) = language(path) {
+            code["language"] = lang.into();
+        }
+        nodes.push(code);
+    }
+    nodes
+}
+
+/// Claude's Read output without its `cat -n` style numbers (`     1\t…`
+/// or `     1→…`), when every line up to an optional trailing
+/// `<system-reminder>` has one. `None` when it isn't numbered.
+fn strip_line_numbers(out: &str) -> Option<String> {
+    let mut lines = Vec::new();
+    let mut rest = "";
+    let mut at = 0;
+    for l in out.split('\n') {
+        let t = l.trim_start();
+        let digits = t.len() - t.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let after = &t[digits..];
+        let body = (digits > 0)
+            .then(|| after.strip_prefix('\t').or_else(|| after.strip_prefix('→')))
+            .flatten();
+        let Some(b) = body else {
+            rest = &out[at..];
+            break;
+        };
+        lines.push(b);
+        at += l.len() + 1;
+    }
+    let rest = rest.trim();
+    (!lines.is_empty() && (rest.is_empty() || rest.starts_with("<system-reminder>")))
+        .then(|| lines.join("\n"))
+}
+
+/// Whether a search tool's output is a list of paths: Claude's Glob, and
+/// Grep in its default `files_with_matches` mode.
+fn lists_files(tool: &str, input: &Value) -> bool {
+    match tool {
+        "Glob" => true,
+        "Grep" => matches!(
+            input.get("output_mode").and_then(Value::as_str),
+            None | Some("files_with_matches")
+        ),
+        _ => false,
+    }
+}
+
+/// A `file` node per path in a search's output, the first
+/// [`LISTED_FILES`], then a note of how many more there were.
+fn file_list_nodes(root: Option<&str>, out: &str) -> Vec<Value> {
+    let paths: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        // `Found 3 files`, `No files found`, a truncation note.
+        .filter(|l| l.starts_with('/') || (!l.is_empty() && !l.contains(' ')))
+        .collect();
+    if paths.is_empty() {
+        return vec![json!({ "type": "code", "text": tail_chars(out, CODE_CHARS) })];
+    }
+    let mut nodes: Vec<Value> = paths
+        .iter()
+        .take(LISTED_FILES)
+        .map(|p| json!({ "type": "file", "path": display_path(root, p) }))
+        .collect();
+    if paths.len() > LISTED_FILES {
+        nodes.push(json!({ "type": "markdown", "text": format!("and {} more", paths.len() - LISTED_FILES) }));
+    }
+    nodes
+}
+
+/// A code fence language for a file, from its extension.
+fn language(path: &str) -> Option<&'static str> {
+    let name = path.rsplit('/').next()?;
+    if name == "Makefile" {
+        return Some("makefile");
+    }
+    if name == "Dockerfile" {
+        return Some("dockerfile");
+    }
+    let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "rs" => "rust",
+        "py" | "pyi" => "python",
+        "js" | "mjs" | "cjs" => "javascript",
+        "jsx" => "jsx",
+        "ts" | "mts" | "cts" => "typescript",
+        "tsx" => "tsx",
+        "go" => "go",
+        "swift" => "swift",
+        "kt" | "kts" => "kotlin",
+        "java" => "java",
+        "c" | "h" => "c",
+        "cc" | "cpp" | "cxx" | "hpp" | "hh" => "cpp",
+        "m" => "objective-c",
+        "cs" => "csharp",
+        "rb" => "ruby",
+        "php" => "php",
+        "lua" => "lua",
+        "sh" | "bash" | "zsh" => "sh",
+        "json" => "json",
+        "toml" => "toml",
+        "yaml" | "yml" => "yaml",
+        "md" | "markdown" => "markdown",
+        "html" | "htm" => "html",
+        "css" => "css",
+        "scss" => "scss",
+        "sql" => "sql",
+        "xml" => "xml",
+        _ => return None,
+    })
+}
+
+/// The first `max` characters of `s`.
+fn head_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
 }
 
 /// The last `max` characters of `s`.

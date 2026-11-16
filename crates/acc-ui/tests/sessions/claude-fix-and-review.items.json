@@ -18,6 +18,7 @@
     "kind": "tool_call",
     "nodes": [
       "disclosure",
+      "file",
       "code"
     ],
     "summary": "Read inventory.py"
@@ -26,6 +27,7 @@
     "kind": "tool_call",
     "nodes": [
       "disclosure",
+      "file",
       "code"
     ],
     "summary": "Read test_inventory.py"

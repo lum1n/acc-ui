@@ -197,7 +197,10 @@ renders.
 - `SessionView::item_spec(id)`: any item as a spec, for a transcript view or an expanded
   step: messages as blocks; reasoning, commands (with `output`), file changes (with
   `diff`), tool calls and subagent runs as a `disclosure` whose summary says what
-  happened (`$ python3 -m unittest`, `Edited inventory.py +4 −3`).
+  happened (`$ python3 -m unittest`, `Edited inventory.py +4 −3`). A file read shows
+  the `file` (at its first line) and its content as code in the file's language;
+  file searches (Claude's Glob, Grep listing files) show a `file` per match. Reasoning
+  without text (Codex with summaries off) has no spec and isn't a step.
 - `SessionView::ask_spec(ask)`: a pending approval or question as a `request` whose
   options carry `answer` actions, with its questions and the plan to approve.
 

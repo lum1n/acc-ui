@@ -506,6 +506,106 @@ fn reasoning_without_text_shows_nothing() {
 }
 
 #[test]
+fn reads_and_searches_show_files() {
+    let mut view = SessionView::new();
+    view.set_root("/w");
+    let tool = |id: &str, tool: &str, kind: &str, title: &str, input: Value, output: &str| {
+        let detail =
+            json!({"type":"tool","tool":tool,"kind":kind,"title":title,"input":input,"output":output});
+        [
+            json!({"type":"item_started","id":id,"kind":"tool_call","detail":detail}),
+            json!({"type":"item_completed","id":id,"status":"completed","detail":detail}),
+        ]
+    };
+    let nodes = |view: &SessionView, id: &str| {
+        let out = view.item_spec(id).unwrap();
+        assert!(out.errors.is_empty(), "{id}: {:?}", out.errors);
+        out.spec.unwrap()["nodes"].as_array().unwrap().clone()
+    };
+    apply(
+        &mut view,
+        &[json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}})],
+    );
+    apply(
+        &mut view,
+        &tool(
+            "r",
+            "Read",
+            "read",
+            "/w/src/a.rs",
+            json!({"file_path":"/w/src/a.rs","offset":10,"limit":2}),
+            "    10\tfn a() {}\n    11→fn b() {}\n\n<system-reminder>\nBe careful.\n</system-reminder>\n",
+        ),
+    );
+    let n = nodes(&view, "r");
+    assert_eq!(n[0]["summary"], "Read src/a.rs");
+    assert_eq!(n[1], json!({"type":"file","path":"src/a.rs","line":10}));
+    assert_eq!(
+        n[2],
+        json!({"type":"code","text":"fn a() {}\nfn b() {}","language":"rust"})
+    );
+
+    // Output that isn't numbered stays as it is; no offset, no line.
+    apply(
+        &mut view,
+        &tool(
+            "r2",
+            "Read",
+            "read",
+            "/w/notes",
+            json!({"file_path":"/w/notes"}),
+            "plain text",
+        ),
+    );
+    let n = nodes(&view, "r2");
+    assert_eq!(n[1], json!({"type":"file","path":"notes"}));
+    assert_eq!(n[2], json!({"type":"code","text":"plain text"}));
+
+    apply(
+        &mut view,
+        &tool(
+            "g",
+            "Grep",
+            "other",
+            "fn main",
+            json!({"pattern":"fn main"}),
+            "Found 2 files\n/w/src/main.rs\n/w/build.rs",
+        ),
+    );
+    let n = nodes(&view, "g");
+    let kinds: Vec<_> = n.iter().map(|n| n["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["disclosure", "file", "file"]);
+    assert_eq!(n[1]["path"], "src/main.rs");
+
+    // Matching lines stay code.
+    apply(
+        &mut view,
+        &tool(
+            "g2",
+            "Grep",
+            "other",
+            "fn main",
+            json!({"pattern":"fn main","output_mode":"content"}),
+            "/w/src/main.rs:1:fn main() {}",
+        ),
+    );
+    assert_eq!(nodes(&view, "g2")[1]["type"], "code");
+
+    apply(
+        &mut view,
+        &tool(
+            "gl",
+            "Glob",
+            "other",
+            "**/*.rs",
+            json!({"pattern":"**/*.rs"}),
+            "/w/src/a.rs\n/w/src/b.rs",
+        ),
+    );
+    assert_eq!(nodes(&view, "gl").len(), 3);
+}
+
+#[test]
 fn ask_options_say_what_they_do() {
     let mut view = SessionView::new();
     apply(
