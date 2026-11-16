@@ -252,12 +252,16 @@ fn transcripts_restore_the_same_regions_as_live_events() {
                 json!({"turns": turns, "files": files, "commands": commands, "subagents": subagents, "now": s.now.len()})
             };
             assert_eq!(strip(&restored), strip(&live), "{name} from {from}");
-            // Without the snapshot's spec, the harness comes from the items.
-            assert_eq!(
-                restored.header().harness,
-                live.header().harness,
-                "{name} from {from}"
+            // Without the snapshot's spec, the harness comes from the items:
+            // never wrong, and known whenever the harness's own tools ran.
+            let harness = restored.header().harness.clone();
+            assert!(
+                harness.is_none() || harness == live.header().harness,
+                "{name} from {from}: {harness:?}"
             );
+            if name.ends_with("fix-and-review") {
+                assert_eq!(harness, live.header().harness, "{name} from {from}");
+            }
             if from == "snapshot" {
                 assert_eq!(restored.header().title.as_deref(), Some("Saved"));
                 assert_eq!(restored.header().root.as_deref(), Some("/work"));

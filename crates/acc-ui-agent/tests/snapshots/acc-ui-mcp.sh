@@ -11,8 +11,8 @@
 # Environment: ACC_UI_SESSION (answers' directory, default "default"),
 # ACC_UI_DIR (default ~/.acc-ui), ACC_UI_ASK_TIMEOUT (seconds, default 900).
 #
-# State. <session>/<spec id>/ is made by the one ask that uses the id; it
-# holds the call's request id, "waiting" while the call waits, "cancelled"
+# State. <session>/<spec id>/claimed/ is made by the one ask that uses the
+# id; <spec id>/ holds the call's request id, "waiting" while the call waits, "cancelled"
 # once the client cancels it, and the client's answer.json. run~/<pid>.<n>/
 # is this process's own: each reply is written there as a file whose name
 # goes down a FIFO, and one writer process copies the files to stdout in
@@ -201,10 +201,11 @@ ask() { # $1 request id token, $2 spec id token, $3 spec type
     return
   fi
   d="$DIR/$sid"
-  # Making the directory claims the id, so an id that waits or was answered
-  # keeps its call and its answer.
-  if ! { mkdir -p "$DIR" && mkdir "$d"; } 2>/dev/null; then
-    if [ -d "$d" ]; then
+  # Making claimed/ claims the id, so an id that waits or was answered
+  # keeps its call and its answer. The client may have written answer.json
+  # before this call arrived (it sees the call first); that answer counts.
+  if ! { mkdir -p "$d" && mkdir "$d/claimed"; } 2>/dev/null; then
+    if [ -d "$d/claimed" ]; then
       text_result "$1" "acc-ui: error: this spec.id was already used in this session; ask again with a new id." ',"isError":true'
     else
       text_result "$1" "acc-ui: error: can't create the answer directory." ',"isError":true'

@@ -409,6 +409,24 @@ fn spec_ids_cant_be_reused() {
     assert!(s.recv(Duration::from_millis(1500)).is_none());
 }
 
+/// A client sees the call before the server does, so its answer can come
+/// first; the call then returns it at once instead of rejecting the id.
+#[test]
+fn answer_written_before_the_call_counts() {
+    let dir = temp_dir("early");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    write_answer(&dir, "early", &Answer::Dismissed);
+    let r = s.call(tool_call(
+        json!(30),
+        "acc_ui_ask",
+        json!({ "spec": badge_spec("early") }),
+    ));
+    assert_eq!(r["id"], 30);
+    assert!(text_of(&r).starts_with("acc-ui: dismissed"), "{r}");
+}
+
 /// Requests whose id isn't a string, number or null get an Invalid Request
 /// error; requests without an id are notifications and get no reply.
 #[test]
