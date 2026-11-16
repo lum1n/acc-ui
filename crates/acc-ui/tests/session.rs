@@ -980,6 +980,41 @@ fn recognised_commands_feed_outcomes_files_and_digests() {
 }
 
 #[test]
+fn set_root_resolves_earlier_relative_reads() {
+    let mut view = SessionView::new();
+    let cmd = |id: &str, command: &str| {
+        let detail = json!({"type":"command","tool":"Bash","command":command,"output":"x"});
+        [
+            json!({"type":"item_started","id":id,"kind":"command_execution","detail":detail}),
+            json!({"type":"item_completed","id":id,"status":"completed","detail":detail}),
+        ]
+    };
+    apply(
+        &mut view,
+        &[json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}})],
+    );
+    apply(&mut view, &cmd("a", "cat src/a.rs /abs/b.rs"));
+    apply(&mut view, &cmd("b", "head -5 src/a.rs"));
+    // Without a root, only the absolute path is known.
+    assert_eq!(view.command("a").unwrap().reads, ["/abs/b.rs"]);
+    assert_eq!(view.turns()[0].digest.files_read, 1);
+
+    view.set_root("/w");
+    assert_eq!(view.command("a").unwrap().reads, ["/w/src/a.rs", "/abs/b.rs"]);
+    let a = view.file("/w/src/a.rs").unwrap();
+    assert_eq!((a.display.as_str(), a.reads), ("src/a.rs", 2));
+    assert_eq!(view.file("/abs/b.rs").unwrap().reads, 1, "not counted twice");
+    assert_eq!(view.turns()[0].digest.files_read, 2);
+
+    // Again, and later commands: still once each.
+    view.set_root("/w");
+    apply(&mut view, &cmd("c", "cat src/c.rs"));
+    assert_eq!(view.file("/w/src/a.rs").unwrap().reads, 2);
+    assert_eq!(view.file("/w/src/c.rs").unwrap().reads, 1);
+    assert_eq!(view.turns()[0].digest.files_read, 3);
+}
+
+#[test]
 fn completed_simple_claude_commands_succeeded() {
     let output = |c: &str| {
         if c.starts_with("pytest") {
