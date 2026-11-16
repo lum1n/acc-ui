@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use acc_ui::session::{self as s, event as e};
 
-use crate::{AccUiError, NormalizedSpec, invalid};
+use crate::{AccUiError, NormalizedSpec, invalid, object};
 
 fn n(v: usize) -> u32 {
     u32::try_from(v).unwrap_or(u32::MAX)
@@ -1197,6 +1197,115 @@ impl SessionView {
         let ask = view.ask(&request_id)?;
         Some(view.ask_spec(ask).into())
     }
+
+    // Opt-in agent layer (acc-ui-agent): the agent's own acc_ui calls.
+
+    /// Every `acc_ui_render`/`acc_ui_ask` call in the session, in order.
+    pub fn agent_calls(&self) -> Vec<AgentCall> {
+        acc_ui_agent::agent_calls(&self.lock()).into_iter().map(Into::into).collect()
+    }
+
+    /// The `acc_ui` call item `item_id` is; show its spec instead of
+    /// `item_spec`.
+    pub fn agent_call(&self, item_id: String) -> Option<AgentCall> {
+        acc_ui_agent::agent_call(&self.lock(), &item_id).map(Into::into)
+    }
+
+    /// The agent's asks the user can answer now, oldest first.
+    pub fn open_agent_asks(&self) -> Vec<AgentCall> {
+        acc_ui_agent::open_agent_asks(&self.lock())
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// How to deliver an answer to the agent's ask in item `item_id`:
+    /// `values_json` (a JSON object), or `None` to dismiss. `session` is
+    /// the id given to `mcpServer`. `None` when the item takes no answer
+    /// (or nothing needs sending for a dismissal).
+    pub fn agent_answer(
+        &self,
+        item_id: String,
+        session: String,
+        values_json: Option<String>,
+    ) -> Result<Option<AgentDelivery>, AccUiError> {
+        let values = values_json.as_deref().map(object).transpose()?;
+        let Some(call) = acc_ui_agent::agent_call(&self.lock(), &item_id) else {
+            return Ok(None);
+        };
+        match call.answer(&session, values) {
+            None => Ok(None),
+            Some(Ok(acc_ui_agent::Delivery::Script(script))) => Ok(Some(AgentDelivery::Script { script })),
+            Some(Ok(acc_ui_agent::Delivery::Prompt(text))) => Ok(Some(AgentDelivery::Prompt { text })),
+            Some(Err(e)) => Err(invalid(e)),
+        }
+    }
+}
+
+/// An `acc_ui_render` or `acc_ui_ask` call the agent made.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentCall {
+    pub item_id: String,
+    pub turn: u32,
+    /// An ask whose answer the server still waits for.
+    pub running: bool,
+    /// `true` for `acc_ui_ask`, `false` for `acc_ui_render`.
+    pub is_ask: bool,
+    pub spec: NormalizedSpec,
+    /// For an ask, where its answer stands.
+    pub ask_state: Option<AgentAskState>,
+    /// Whether the user can still answer it (see `agentAnswer`).
+    pub awaits_answer: bool,
+}
+
+impl From<acc_ui_agent::AgentCall> for AgentCall {
+    fn from(c: acc_ui_agent::AgentCall) -> Self {
+        Self {
+            awaits_answer: c.awaits_answer(),
+            item_id: c.item_id,
+            turn: n(c.turn),
+            running: c.running,
+            is_ask: c.call.kind == acc_ui_agent::UiCallKind::Ask,
+            spec: c.call.spec.into(),
+            ask_state: c.call.ask.map(Into::into),
+        }
+    }
+}
+
+/// Where an agent's ask stands.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum AgentAskState {
+    Waiting,
+    /// `values_json` is the submitted JSON object.
+    Answered { values_json: String },
+    Dismissed,
+    /// The call stopped waiting; an answer now goes as a prompt.
+    TimedOut,
+    Failed { message: String },
+}
+
+impl From<acc_ui_agent::AskState> for AgentAskState {
+    fn from(s: acc_ui_agent::AskState) -> Self {
+        use acc_ui_agent::AskState as A;
+        match s {
+            A::Waiting => Self::Waiting,
+            A::Answered(sub) => Self::Answered {
+                values_json: serde_json::Value::Object(sub.values).to_string(),
+            },
+            A::Dismissed => Self::Dismissed,
+            A::TimedOut => Self::TimedOut,
+            A::Failed(message) => Self::Failed { message },
+        }
+    }
+}
+
+/// How an answer reaches the agent.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum AgentDelivery {
+    /// Run on the host (as with `answerScript`): the waiting call returns.
+    Script { script: String },
+    /// Send as the next prompt.
+    Prompt { text: String },
 }
 
 /// What a link points at.

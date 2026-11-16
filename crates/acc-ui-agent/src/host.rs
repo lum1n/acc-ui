@@ -82,9 +82,22 @@ pub fn server_script() -> String {
     s.replace("@TOOLS@", &tools)
 }
 
-/// The `tools/list` result the server answers with.
+/// The `tools/list` result the server answers with. The spec schema goes
+/// with `acc_ui_render` only; `acc_ui_ask` takes the same spec and points
+/// there, so the agent reads the schema once a turn instead of twice.
 pub fn tools_list() -> Value {
     let schema = tool_input_schema();
+    let ask_schema = json!({
+        "type": "object",
+        "properties": {
+            "spec": {
+                "type": "object",
+                "description": "An acc-ui/1 spec, exactly as acc_ui_render's input schema describes \
+                    it, with an id unique in the session.",
+            }
+        },
+        "required": ["spec"],
+    });
     json!({
         "tools": [
             {
@@ -106,7 +119,7 @@ pub fn tools_list() -> Value {
                     with submit actions, chips) and wait for their answer, returned as JSON \
                     values. Give the spec an id unique in the session. Use it for choices and \
                     structured input you need before carrying on.",
-                "inputSchema": schema,
+                "inputSchema": ask_schema,
                 "annotations": { "readOnlyHint": true, "openWorldHint": false },
             }
         ]
