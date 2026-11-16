@@ -876,7 +876,7 @@
       "properties": {
         "src": {
           "type": "string",
-          "description": "An `https:` URL, a `data:image/...` URL, or an absolute path on the host."
+          "description": "An `https:` URL, a `data:image/...` URL, an absolute path on the\nhost, or `sha256:<hex>` of an image the app holds (one the user sent)."
         },
         "alt": {
           "type": "string"

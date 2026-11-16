@@ -64,7 +64,7 @@ Set `type` to one of these. `?` marks optional fields.
 - **`commit`**: A commit. Fields: `sha` string; `title?` string (First line of the message); `url?` string; `author?` string.
 - **`chart`**: A line, bar, area, point or pie chart. Fields: `kind` ChartKind (A `pie` uses the first series, with each point's `x` as a slice label); `series` [Series]; `title?` string; `x_label?` string; `y_label?` string; `stacked?` boolean (Stack bar and area series instead of overlapping them).
 - **`mermaid`**: A Mermaid diagram. Fields: `code` string (Mermaid source: flowchart, sequence, state, class or ER diagram).
-- **`image`**: An image. Fields: `src` string (An `https:` URL, a `data:image/...` URL, or an absolute path on the host); `alt?` string; `caption?` string.
+- **`image`**: An image. Fields: `src` string (An `https:` URL, a `data:image/...` URL, an absolute path on the host, or `sha256:<hex>` of an image the app holds (one the user sent)); `alt?` string; `caption?` string.
 - **`markdown`**: Markdown text. Fields: `text` string.
 - **`html`**: Self-contained HTML in a sandbox: no network, no navigation. Fields: `html` string (A full document or a fragment. Inline all CSS, JS and images: the sandbox fetches nothing and opens links only after the user confirms); `height?` integer (Preferred height in points; the content's own height is used if unset).
 - **`code`**: Source code or other preformatted text. Fields: `text` string; `language?` string (The fence's language (`rust`, `sh`, `diff`), when known).

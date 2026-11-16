@@ -688,12 +688,15 @@ fn check_image_src(src: &str) -> Result<(), String> {
     let ok = lower.starts_with("https://")
         || lower.starts_with("data:image/")
         || src.starts_with('/')
-        || src.starts_with("~/");
+        || src.starts_with("~/")
+        || src
+            .strip_prefix("sha256:")
+            .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()));
     if ok {
         Ok(())
     } else {
         Err(format!(
-            "image src {:?} must be https:, data:image/ or an absolute host path",
+            "image src {:?} must be https:, data:image/, an absolute host path or sha256:<hex>",
             src.chars().take(80).collect::<String>()
         ))
     }

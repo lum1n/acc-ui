@@ -42,6 +42,9 @@ pub enum Event {
         detail: Detail,
         #[serde(default)]
         started_at_ms: Option<u64>,
+        /// A user message's images, from ACC's refs in `native.images`.
+        #[serde(default, rename = "native", deserialize_with = "native_images")]
+        images: Vec<ImageRef>,
     },
     ItemDelta {
         id: String,
@@ -107,6 +110,48 @@ pub enum Event {
     /// and event types newer than this acc-ui.
     #[serde(other)]
     Unknown,
+}
+
+/// One image a message carried, by reference (`acc_core::image::ImageRef`).
+/// The bytes are not in events: an app shows an image it sent itself by
+/// `sha256`, or reads `path` from the host.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageRef {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    /// Decoded size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    /// Lowercase hex SHA-256 of the bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// The image's file on the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+impl ImageRef {
+    /// An image node `src` for it: the path, else `sha256:<hex>`.
+    pub fn src(&self) -> Option<String> {
+        self.path
+            .clone()
+            .or_else(|| self.sha256.as_ref().map(|h| format!("sha256:{h}")))
+    }
+}
+
+/// `native.images`, never failing the event: anything malformed is left out.
+fn native_images<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<ImageRef>, D::Error> {
+    let native = Value::deserialize(d)?;
+    Ok(native
+        .get("images")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| ImageRef::deserialize(v).ok())
+                .filter(|r| *r != ImageRef::default())
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// What a session is doing (`acc_core::state::RunState`).

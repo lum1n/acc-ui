@@ -94,6 +94,7 @@ impl SessionView {
                 parent: item.parent,
                 detail: item.detail.clone(),
                 started_at_ms: item.started_at_ms,
+                images: Vec::new(),
             });
             if !item.text.is_empty() {
                 view.apply(Event::ItemDelta {

@@ -32,8 +32,8 @@ use serde::Serialize;
 
 pub use ask::{AnswerDraft, Question, QuestionOption, encode_answers};
 pub use command::{CommandKind, Diagnostics, TestCounts};
-pub use event::Event;
 use event::{Detail, FileChangeKind, ItemKind, ItemStatus, RunState, ToolKind};
+pub use event::{Event, ImageRef};
 pub use model::{
     Activity, ActivityKind, Ask, CommandEntry, CommandOutcome, Digest, DigestPart, FileEdit, FileEntry,
     HEADLINE_CHARS, Header, ItemView, OUTPUT_TAIL_LINES, PlanView, SubagentEntry, Turn, TurnOutcome,
@@ -42,6 +42,8 @@ pub use shell::unwrap_shell;
 
 /// Longest title taken from a prompt.
 const TITLE_CHARS: usize = 80;
+/// What ACC shows for a prompt that is only images.
+const IMAGE_PLACEHOLDER: &str = "[image]";
 
 /// Notices kept; older ones are dropped.
 const MAX_NOTICES: usize = 50;
@@ -202,7 +204,14 @@ impl SessionView {
                 parent,
                 detail,
                 started_at_ms,
-            } => self.item_started(id, kind, parent, detail, started_at_ms, &mut ch),
+                images,
+            } => {
+                let first = !self.item_index.contains_key(&id);
+                self.item_started(id.clone(), kind, parent, detail, started_at_ms, &mut ch);
+                if first && !images.is_empty() {
+                    self.item_images(&id, images, &mut ch);
+                }
+            }
             Event::ItemDelta { id, text } => self.item_delta(&id, &text, &mut ch),
             Event::ItemUpdated { id, detail } => {
                 self.item_detail(&id, detail, None, None, &mut ch);
@@ -429,6 +438,7 @@ impl SessionView {
             text: String::new(),
             detail: Detail::Text,
             output: String::new(),
+            images: Vec::new(),
             started_at_ms,
             completed_at_ms: None,
         });
@@ -436,6 +446,21 @@ impl SessionView {
         ch.now = true;
         self.seen(started_at_ms, ch);
         self.item_detail(&id, detail, None, None, ch);
+    }
+
+    /// Images a message carried (ACC's refs); a prompt's go on its turn.
+    fn item_images(&mut self, id: &str, images: Vec<ImageRef>, ch: &mut Changes) {
+        let Some(&i) = self.item_index.get(id) else {
+            return;
+        };
+        let item = &mut self.items[i];
+        item.images = images;
+        if item.kind == ItemKind::UserMessage && item.parent.is_none() {
+            let t = &mut self.turns[item.turn];
+            t.prompt.get_or_insert_with(String::new);
+            t.prompt_images.extend(item.images.iter().cloned());
+            Changes::push(&mut ch.turns, item.turn);
+        }
     }
 
     fn item_delta(&mut self, id: &str, text: &str, ch: &mut Changes) {
@@ -449,6 +474,8 @@ impl SessionView {
                 let output = item.output.clone();
                 self.update_command_output(id, &output, ch);
             }
+            // ACC's stand-in for an image-only prompt, when it sent refs.
+            Detail::Text if text == IMAGE_PLACEHOLDER && item.text.is_empty() && !item.images.is_empty() => {}
             Detail::Text => {
                 item.text.push_str(text);
                 Changes::push(&mut ch.items, id.to_owned());
@@ -488,6 +515,9 @@ impl SessionView {
         };
         // A completion without a detail keeps the one it had.
         if detail != Detail::Text || self.items[i].detail == Detail::Text {
+            if let Some(images) = tool_images(&detail) {
+                self.items[i].images = images;
+            }
             self.items[i].detail = detail;
         }
         if let Some(s) = status {
@@ -517,6 +547,13 @@ impl SessionView {
                     self.record_edit(&item, f, ch);
                 }
                 self.bump_parent(&item, |s| s.edits += 1, ch);
+            }
+            Detail::Tool { tool, paths, .. }
+                if tool == "imageView" && status == Some(ItemStatus::Completed) =>
+            {
+                for p in paths {
+                    self.record_read(&item, p, ch);
+                }
             }
             Detail::Tool {
                 kind: ToolKind::Read,
@@ -786,6 +823,7 @@ impl SessionView {
         self.turns.push(Turn {
             index,
             prompt: None,
+            prompt_images: Vec::new(),
             narrative: None,
             narrative_item: None,
             items: Vec::new(),
@@ -1079,4 +1117,37 @@ fn tail(output: &str) -> (String, usize) {
     let lines: Vec<&str> = output.lines().collect();
     let start = lines.len().saturating_sub(OUTPUT_TAIL_LINES);
     (lines[start..].join("\n"), lines.len())
+}
+
+/// The image a Codex `imageView` looked at or an `imageGeneration` made,
+/// by path. `None` for other details.
+fn tool_images(detail: &Detail) -> Option<Vec<ImageRef>> {
+    let Detail::Tool {
+        tool, input, paths, ..
+    } = detail
+    else {
+        return None;
+    };
+    let path = match tool.as_str() {
+        "imageView" => paths
+            .first()
+            .cloned()
+            .or_else(|| input.get("path")?.as_str().map(str::to_owned)),
+        "imageGeneration" => ["savedPath", "path"].iter().find_map(|k| {
+            input
+                .get(*k)?
+                .as_str()
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned)
+        }),
+        _ => return None,
+    };
+    Some(
+        path.map(|p| ImageRef {
+            path: Some(p),
+            ..ImageRef::default()
+        })
+        .into_iter()
+        .collect(),
+    )
 }

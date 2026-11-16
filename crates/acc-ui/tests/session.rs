@@ -887,3 +887,103 @@ fn completed_simple_claude_commands_succeeded() {
         (CommandOutcome::Failed, true)
     );
 }
+
+const SHA: &str = "f1dd04ee84b8e5da1c5e3ed2b8d9b0e4e01e5d5bd9da1e3e0b8b6f0f1a3e7c2d";
+
+#[test]
+fn prompt_images_come_from_acc_refs() {
+    let mut view = SessionView::new();
+    let image = json!({"media_type": "image/png", "bytes": 3, "sha256": SHA});
+    apply(
+        &mut view,
+        &[
+            // An image-only prompt: ACC's `[image]` stand-in is dropped.
+            json!({"type":"item_started","id":"u1","kind":"user_message","detail":{"type":"text"},
+                "native":{"images":[image, {"bogus": true}, "not a ref"]}}),
+            json!({"type":"item_delta","id":"u1","text":"[image]"}),
+            json!({"type":"item_completed","id":"u1","status":"completed","detail":{"type":"text"}}),
+        ],
+    );
+    let t = &view.turns()[0];
+    assert_eq!(t.prompt.as_deref(), Some(""));
+    assert_eq!(t.prompt_images.len(), 1, "malformed refs are left out");
+    assert_eq!(t.prompt_images[0].sha256.as_deref(), Some(SHA));
+    assert_eq!(t.prompt_images[0].src(), Some(format!("sha256:{SHA}")));
+    assert_eq!(view.header().title, None);
+    let item = view.item("u1").unwrap();
+    assert_eq!(item.text, "");
+    let spec = view.item_spec("u1").unwrap();
+    assert!(spec.errors.is_empty(), "{:?}", spec.errors);
+    let nodes = spec.spec.unwrap()["nodes"].to_string();
+    assert!(nodes.contains(&format!("\"src\":\"sha256:{SHA}\"")), "{nodes}");
+
+    // Text with an image keeps the text; Codex's own native keys are fine.
+    apply(
+        &mut view,
+        &[
+            json!({"type":"item_started","id":"u2","kind":"user_message","detail":{"type":"text"},
+                "native":{"type":"userMessage","images":[{"path":"/w/shot.png"}]}}),
+            json!({"type":"item_delta","id":"u2","text":"what is this?"}),
+        ],
+    );
+    let t = &view.turns()[1];
+    assert_eq!(t.prompt.as_deref(), Some("what is this?"));
+    assert_eq!(t.prompt_images[0].path.as_deref(), Some("/w/shot.png"));
+
+    // Older ACC without refs: the stand-in stays the prompt.
+    apply(
+        &mut view,
+        &[
+            json!({"type":"item_started","id":"u3","kind":"user_message","detail":{"type":"text"}}),
+            json!({"type":"item_delta","id":"u3","text":"[image]"}),
+        ],
+    );
+    let t = &view.turns()[2];
+    assert_eq!((t.prompt.as_deref(), t.prompt_images.len()), (Some("[image]"), 0));
+}
+
+#[test]
+fn codex_image_tools_carry_their_image() {
+    let mut view = SessionView::new();
+    view.set_root("/w");
+    apply(
+        &mut view,
+        &[
+            json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}}),
+            json!({"type":"item_started","id":"iv","kind":"tool_call","detail":{"type":"tool","tool":"imageView",
+                "kind":"other","title":"/w/a.png","input":{"path":"/w/a.png"},"paths":["/w/a.png"]}}),
+            json!({"type":"item_completed","id":"iv","status":"completed","detail":{"type":"tool","tool":"imageView",
+                "kind":"other","title":"/w/a.png","input":{"path":"/w/a.png"},"paths":["/w/a.png"]}}),
+            json!({"type":"item_started","id":"ig","kind":"tool_call","detail":{"type":"tool","tool":"imageGeneration",
+                "kind":"other","title":"a cat","input":{"revisedPrompt":"a cat","savedPath":"/w/cat.png"}}}),
+        ],
+    );
+    assert_eq!(
+        view.item("ig").unwrap().images[0].path.as_deref(),
+        Some("/w/cat.png")
+    );
+    let iv = view.item("iv").unwrap();
+    assert_eq!(iv.images[0].path.as_deref(), Some("/w/a.png"));
+    assert_eq!(view.files()[0].display, "a.png");
+    assert_eq!(view.files()[0].reads, 1);
+    let spec = view.item_spec("iv").unwrap();
+    let nodes = spec.spec.unwrap()["nodes"].to_string();
+    assert!(nodes.contains(r#""src":"/w/a.png""#), "{nodes}");
+    assert!(nodes.contains(r#""alt":"a.png""#), "{nodes}");
+}
+
+#[test]
+fn image_src_takes_a_content_hash() {
+    let spec = |src: &str| json!({"root": {"type": "image", "src": src}});
+    assert!(
+        acc_ui::normalize_value(spec(&format!("sha256:{SHA}")))
+            .errors
+            .is_empty()
+    );
+    assert!(!acc_ui::normalize_value(spec("sha256:abc")).errors.is_empty());
+    assert!(
+        !acc_ui::normalize_value(spec(&format!("sha256:{}", "g".repeat(64))))
+            .errors
+            .is_empty()
+    );
+}
