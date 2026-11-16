@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde::ser::{SerializeStruct, Serializer};
 
 use super::ask::Question;
+use super::command::{CommandKind, Diagnostics, TestCounts};
 use super::event::{
     AskKind, AskOption, Detail, FileChangeKind, Hunk, ItemKind, ItemStatus, PlanEntry, PlanStatus, Quota,
     RunState, Usage,
@@ -64,6 +65,12 @@ pub enum ActivityKind {
     Delegating,
     WaitingForSubagents,
     Working,
+    /// Running tests.
+    Testing,
+    /// Building, compiling or type checking.
+    Building,
+    /// Running a linter.
+    Checking,
 }
 
 impl ActivityKind {
@@ -82,6 +89,9 @@ impl ActivityKind {
             Self::Delegating => "Delegating",
             Self::WaitingForSubagents => "Waiting for subagents",
             Self::Working => "Working",
+            Self::Testing => "Testing",
+            Self::Building => "Building",
+            Self::Checking => "Checking",
         }
     }
 
@@ -100,6 +110,9 @@ impl ActivityKind {
             Self::Delegating => "Delegated",
             Self::WaitingForSubagents => "Waited for subagents",
             Self::Working => "Worked",
+            Self::Testing => "Tested",
+            Self::Building => "Built",
+            Self::Checking => "Checked",
         }
     }
 }
@@ -203,6 +216,24 @@ pub struct CommandEntry {
     pub exit_code: Option<i32>,
     /// Whether it worked, as far as anyone can tell.
     pub outcome: CommandOutcome,
+    /// `outcome` wasn't taken from an exit code: it was read from the
+    /// output (a test summary, a compiler's errors; `cargo test | tail`
+    /// exits with `tail`'s code), or it is a Claude Code command that
+    /// completed, which Claude only reports for a zero exit.
+    pub outcome_inferred: bool,
+    /// What kind of work it does; [`CommandKind::Other`] unless every part
+    /// of the command was understood.
+    pub kind: CommandKind,
+    /// The program behind `kind`, with its subcommand where that matters:
+    /// `cargo test`, `pytest`, `git commit`, `rg`.
+    pub tool: Option<String>,
+    /// Files it showed (`cat`, `head`, `sed -n`), as absolute paths. Only
+    /// paths it could resolve: relative ones need a `cwd` or root.
+    pub reads: Vec<String>,
+    /// A test run's counts, from the runner's summary.
+    pub tests: Option<TestCounts>,
+    /// A build's or linter's errors and warnings.
+    pub diagnostics: Option<Diagnostics>,
     /// The last lines of output (see [`OUTPUT_TAIL_LINES`]).
     pub output_tail: String,
     pub output_lines: usize,
@@ -232,6 +263,28 @@ pub enum CommandOutcome {
 }
 
 impl CommandOutcome {
+    /// The outcome from the exit code, corrected by what the output says
+    /// (`verdict`), and whether that correction decided it. Failed tests
+    /// fail a command that exited 0 (output piped through `tail`); a
+    /// passing summary only counts when there is no exit code. Without
+    /// either, `zero_if_completed` (the harness marks non-zero exits as
+    /// failed and this was one simple command) makes it a success.
+    pub(crate) fn judge(
+        status: ItemStatus,
+        exit_code: Option<i32>,
+        verdict: Option<bool>,
+        zero_if_completed: bool,
+    ) -> (Self, bool) {
+        let plain = Self::of(status, exit_code);
+        let judged = match (plain, verdict) {
+            (Self::Succeeded | Self::Unknown, Some(false)) => Self::Failed,
+            (Self::Unknown, Some(true)) => Self::Succeeded,
+            (Self::Unknown, None) if zero_if_completed => Self::Succeeded,
+            (o, _) => o,
+        };
+        (judged, judged != plain)
+    }
+
     pub(crate) fn of(status: ItemStatus, exit_code: Option<i32>) -> Self {
         match (status, exit_code) {
             (ItemStatus::Failed, _) | (_, Some(1..) | Some(..=-1)) => Self::Failed,
@@ -334,6 +387,8 @@ pub struct Digest {
     pub subagents: u32,
     /// Other tool calls (searches, fetches, MCP tools).
     pub tools: u32,
+    /// The counts of the turn's last test run that printed a summary.
+    pub tests: Option<TestCounts>,
 }
 
 impl Digest {
@@ -363,6 +418,13 @@ impl Digest {
             parts.push(DigestPart::Ran {
                 commands: self.commands,
                 failed: self.commands_failed,
+            });
+        }
+        if let Some(t) = self.tests {
+            parts.push(DigestPart::Tests {
+                passed: t.passed,
+                failed: t.failed,
+                skipped: t.skipped,
             });
         }
         if self.subagents > 0 {
@@ -395,7 +457,7 @@ impl Digest {
 
 impl Serialize for Digest {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut s = serializer.serialize_struct("Digest", 12)?;
+        let mut s = serializer.serialize_struct("Digest", 13)?;
         s.serialize_field("files_changed", &self.files_changed)?;
         s.serialize_field("files_created", &self.files_created)?;
         s.serialize_field("files_deleted", &self.files_deleted)?;
@@ -406,6 +468,7 @@ impl Serialize for Digest {
         s.serialize_field("commands_failed", &self.commands_failed)?;
         s.serialize_field("subagents", &self.subagents)?;
         s.serialize_field("tools", &self.tools)?;
+        s.serialize_field("tests", &self.tests)?;
         s.serialize_field("parts", &self.parts())?;
         s.serialize_field("summary", &self.summary())?;
         s.end()
@@ -431,6 +494,12 @@ pub enum DigestPart {
     Ran {
         commands: u32,
         failed: u32,
+    },
+    /// The last test run's counts; `failed` ones are worth a warning colour.
+    Tests {
+        passed: u32,
+        failed: u32,
+        skipped: u32,
     },
     Subagents {
         count: u32,
@@ -461,6 +530,11 @@ impl DigestPart {
                 }
                 s
             }
+            Self::Tests { passed, failed, .. } => match (passed, failed) {
+                (_, 0) => format!("{} passed", n(passed, "test", "tests")),
+                (0, _) => format!("{} failed", n(failed, "test", "tests")),
+                _ => format!("{} failed, {passed} passed", n(failed, "test", "tests")),
+            },
             Self::Subagents { count } => n(count, "subagent", "subagents"),
             Self::Tools { count } => n(count, "other tool", "other tools"),
         }
@@ -468,7 +542,10 @@ impl DigestPart {
 
     /// Whether it reports something that went wrong.
     pub fn is_warning(&self) -> bool {
-        matches!(self, Self::Ran { failed: 1.., .. })
+        matches!(
+            self,
+            Self::Ran { failed: 1.., .. } | Self::Tests { failed: 1.., .. }
+        )
     }
 }
 

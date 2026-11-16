@@ -346,7 +346,8 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const fmtMs = (ms) => ms == null ? "" : ms < 1000 ? `${ms} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`;
 const fmtK = (n) => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + "k" : String(n);
 const VERB = { thinking: "Thinking", writing: "Writing", running: "Running", reading: "Reading", searching: "Searching", editing: "Editing",
-  fetching: "Fetching", planning: "Planning", calling_tool: "Calling", delegating: "Delegating", waiting_for_subagents: "Waiting on subagents", working: "Working" };
+  fetching: "Fetching", planning: "Planning", calling_tool: "Calling", delegating: "Delegating", waiting_for_subagents: "Waiting on subagents", working: "Working",
+  testing: "Testing", building: "Building", checking: "Checking" };
 function isNew(region, id) {
   seen[region] ??= new Set();
   const fresh = animate && !seen[region].has(id);
@@ -406,6 +407,7 @@ function digestChips(d) {
         (p.created ? `<span class="chip"><b>${p.created}</b> new</span>` : "");
       case "read": return `<span class="chip">Read <b>${p.files}</b></span>`;
       case "ran": return `<span class="chip${p.failed ? " bad" : ""}">Ran <b>${plural(p.commands, "command", "commands")}</b>${p.failed ? `, ${p.failed} failed` : ""}</span>`;
+      case "tests": return `<span class="chip${p.failed ? " bad" : ""}">Tests <b>${p.passed}</b> passed${p.failed ? `, <b>${p.failed}</b> failed` : ""}</span>`;
       case "subagents": return `<span class="chip"><b>${plural(p.count, "subagent", "subagents")}</b></span>`;
       case "tools": return `<span class="chip"><b>${p.count}</b> other tools</span>`;
       default: return "";
@@ -467,9 +469,12 @@ function commandsPanel() {
   const rows = cmds.map((c) => {
     const st = { running: "running", succeeded: "ok", failed: "fail", unknown: "unknown" }[c.outcome];
     const key = "cmd:" + c.item_id;
+    const t = c.tests, dg = c.diagnostics;
+    const facts = t ? `${t.passed} passed${t.failed ? `, ${t.failed} failed` : ""}` : dg && (dg.errors || dg.warnings) ? `${dg.errors} err, ${dg.warnings} warn` : "";
+    const tag = c.kind !== "other" ? `<span class="code" title="${esc(c.tool || "")}${c.outcome_inferred ? " (outcome from output)" : ""}">${c.kind}${facts ? " · " + facts : ""}${c.outcome_inferred ? "*" : ""}</span>` : "";
     const code = c.exit_code != null ? `<span class="code ${c.exit_code === 0 ? "ok" : "fail"}">${c.exit_code}</span>` : c.status === "running" ? "" : `<span class="code">${c.output_lines} ln</span>`;
     return `<div class="row${isNew("cmds", c.item_id)}" onclick="toggle('${esc(key)}')">
-      <span class="dot ${st}"></span><span class="cmd" title="${esc(c.display)}">${esc(c.headline)}</span>${code}
+      <span class="dot ${st}"></span><span class="cmd" title="${esc(c.display)}">${esc(c.headline)}</span>${tag}${code}
     </div>${open.has(key) ? `<pre class="tail">${esc(c.output_tail || "(no output)")}</pre>` : ""}`;
   }).join("");
   return `<section class="panel"><h2>Commands <span class="n">${cmds.length}</span></h2>${rows || '<div class="empty">No commands yet.</div>'}</section>`;

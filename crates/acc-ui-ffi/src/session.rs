@@ -103,9 +103,51 @@ mirror_enum!(
     /// The verb of an [`Activity`]; apps word and localise it.
     ActivityKind <= s::ActivityKind {
         Thinking, Writing, Running, Reading, Searching, Editing, Fetching, Planning, CallingTool,
-        Delegating, WaitingForSubagents, Working,
+        Delegating, WaitingForSubagents, Working, Testing, Building, Checking,
     }
 );
+mirror_enum!(
+    /// What kind of work a command does; `Other` unless every part of it
+    /// was understood.
+    CommandKind <= s::CommandKind {
+        Other, Test, Build, Lint, Format, Install, Git, Search, List, Read,
+    }
+);
+
+/// Test counts from a runner's summary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct TestCounts {
+    pub passed: u32,
+    /// Failures and errors.
+    pub failed: u32,
+    pub skipped: u32,
+}
+
+impl From<s::TestCounts> for TestCounts {
+    fn from(t: s::TestCounts) -> Self {
+        Self {
+            passed: t.passed,
+            failed: t.failed,
+            skipped: t.skipped,
+        }
+    }
+}
+
+/// A build's or linter's errors and warnings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct Diagnostics {
+    pub errors: u32,
+    pub warnings: u32,
+}
+
+impl From<s::Diagnostics> for Diagnostics {
+    fn from(d: s::Diagnostics) -> Self {
+        Self {
+            errors: d.errors,
+            warnings: d.warnings,
+        }
+    }
+}
 mirror_enum!(
     /// How a command went; `Unknown` when it finished without an exit code.
     CommandOutcome <= s::CommandOutcome { Running, Succeeded, Failed, Unknown }
@@ -648,6 +690,15 @@ pub struct CommandEntry {
     pub status: ItemStatus,
     pub exit_code: Option<i32>,
     pub outcome: CommandOutcome,
+    /// `outcome` was read from the output, not taken from an exit code.
+    pub outcome_inferred: bool,
+    pub kind: CommandKind,
+    /// The program behind `kind`: `cargo test`, `pytest`, `git commit`.
+    pub tool: Option<String>,
+    /// Files it showed (`cat`, `head`, `sed -n`), absolute.
+    pub reads: Vec<String>,
+    pub tests: Option<TestCounts>,
+    pub diagnostics: Option<Diagnostics>,
     /// The last lines of output.
     pub output_tail: String,
     pub output_lines: u32,
@@ -668,6 +719,12 @@ impl From<s::CommandEntry> for CommandEntry {
             status: c.status.into(),
             exit_code: c.exit_code,
             outcome: c.outcome.into(),
+            outcome_inferred: c.outcome_inferred,
+            kind: c.kind.into(),
+            tool: c.tool,
+            reads: c.reads,
+            tests: c.tests.map(Into::into),
+            diagnostics: c.diagnostics.map(Into::into),
             output_tail: c.output_tail,
             output_lines: n(c.output_lines),
             started_at_ms: c.started_at_ms,
@@ -735,6 +792,12 @@ pub enum DigestPart {
         commands: u32,
         failed: u32,
     },
+    /// The last test run; show it as a warning when `failed` is above 0.
+    Tests {
+        passed: u32,
+        failed: u32,
+        skipped: u32,
+    },
     Subagents {
         count: u32,
     },
@@ -762,6 +825,15 @@ impl From<s::DigestPart> for DigestPart {
             },
             P::Read { files } => Self::Read { files },
             P::Ran { commands, failed } => Self::Ran { commands, failed },
+            P::Tests {
+                passed,
+                failed,
+                skipped,
+            } => Self::Tests {
+                passed,
+                failed,
+                skipped,
+            },
             P::Subagents { count } => Self::Subagents { count },
             P::Tools { count } => Self::Tools { count },
         }
@@ -781,6 +853,8 @@ pub struct Digest {
     pub commands_failed: u32,
     pub subagents: u32,
     pub tools: u32,
+    /// The turn's last test run with a summary.
+    pub tests: Option<TestCounts>,
     /// The counts worth showing, in reading order.
     pub parts: Vec<DigestPart>,
     /// `parts` as one English line.
@@ -802,6 +876,7 @@ impl From<s::Digest> for Digest {
             commands_failed: d.commands_failed,
             subagents: d.subagents,
             tools: d.tools,
+            tests: d.tests.map(Into::into),
         }
     }
 }

@@ -10,7 +10,7 @@
 //! | Plan ([`PlanView`]) | the agent's to-do list |
 //! | Needs you ([`Ask`]) | approvals and questions waiting on the user |
 //! | Files ([`FileEntry`]) | files read and changed, with their edits |
-//! | Commands ([`CommandEntry`]) | shell commands, exit codes, output tails |
+//! | Commands ([`CommandEntry`]) | shell commands: kind, outcome, test counts, output tails |
 //! | Subagents ([`SubagentEntry`]) | other agents' runs and their reports |
 //! | Turns ([`Turn`]) | each prompt and the items it led to |
 //!
@@ -18,8 +18,10 @@
 //! returns the [`Changes`] it made, so a renderer redraws only those.
 
 mod ask;
+mod command;
 pub mod event;
 mod model;
+mod output;
 mod restore;
 mod shell;
 mod translate;
@@ -29,6 +31,7 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 pub use ask::{AnswerDraft, Question, QuestionOption, encode_answers};
+pub use command::{CommandKind, Diagnostics, TestCounts};
 pub use event::Event;
 use event::{Detail, FileChangeKind, ItemKind, ItemStatus, RunState, ToolKind};
 pub use model::{
@@ -109,6 +112,9 @@ pub struct SessionView {
     /// Every item of each turn, subagents' included, as indices into
     /// `items`, for the digests.
     turn_items: Vec<Vec<usize>>,
+    /// Reads already counted, as (item id, path), so an item completed
+    /// twice reads its files once.
+    reads_seen: HashSet<(String, String)>,
     /// The latest time any event reported, ms since the Unix epoch.
     last_seen_ms: Option<u64>,
     /// Rebuilding from a transcript: a new prompt ends the turn before it
@@ -494,7 +500,17 @@ impl SessionView {
         Changes::push(&mut ch.items, id.to_owned());
         let item = self.items[i].clone();
         match &item.detail {
-            Detail::Command { .. } => self.upsert_command(&item, ch),
+            Detail::Command { .. } => {
+                self.upsert_command(&item, ch);
+                if status == Some(ItemStatus::Completed)
+                    && let Some(c) = self.command(&item.id)
+                    && c.outcome != CommandOutcome::Failed
+                {
+                    for p in c.reads.clone() {
+                        self.record_read(&item, &p, ch);
+                    }
+                }
+            }
             Detail::Subagent { .. } => self.upsert_subagent(&item, ch),
             Detail::FileChange { files, .. } if status == Some(ItemStatus::Completed) => {
                 for f in files {
@@ -548,6 +564,16 @@ impl SessionView {
         let output = if output.is_empty() { &item.output } else { output };
         let (output_tail, output_lines) = tail(output);
         let display = unwrap_shell(command);
+        let mut rec = command::recognise(&display, cwd.as_deref().or(self.header.root.as_deref()));
+        if item.status != ItemStatus::Running {
+            rec.read_output(output);
+        }
+        // Claude Code marks a Bash call that exits non-zero as an error, so
+        // one that completed exited 0, unless a pipe or `;` hid the status.
+        let zero_if_completed =
+            self.header.harness.as_deref() == Some("claude") && command::is_simple(&display);
+        let (outcome, outcome_inferred) =
+            CommandOutcome::judge(item.status, *exit_code, rec.verdict, zero_if_completed);
         let entry = CommandEntry {
             item_id: item.id.clone(),
             parent: item.parent.clone(),
@@ -558,7 +584,13 @@ impl SessionView {
             cwd: cwd.clone(),
             status: item.status,
             exit_code: *exit_code,
-            outcome: CommandOutcome::of(item.status, *exit_code),
+            outcome,
+            outcome_inferred,
+            kind: rec.kind,
+            tool: rec.tool,
+            reads: rec.reads.into_iter().map(|r| r.path).collect(),
+            tests: rec.tests,
+            diagnostics: rec.diagnostics,
             output_tail,
             output_lines,
             started_at_ms: item.started_at_ms,
@@ -709,6 +741,9 @@ impl SessionView {
     }
 
     fn record_read(&mut self, item: &ItemView, path: &str, ch: &mut Changes) {
+        if !self.reads_seen.insert((item.id.clone(), path.to_owned())) {
+            return;
+        }
         let f = self.file_mut(path);
         f.reads += 1;
         Changes::push(&mut f.turns, item.turn);
@@ -818,10 +853,18 @@ impl SessionView {
                         }
                     }
                 }
-                Detail::Command { exit_code, .. } => {
+                Detail::Command { .. } => {
                     d.commands += 1;
-                    if CommandOutcome::of(item.status, *exit_code) == CommandOutcome::Failed {
+                    let Some(c) = self.command_index.get(&item.id).map(|&c| &self.commands[c]) else {
+                        continue;
+                    };
+                    if c.outcome == CommandOutcome::Failed {
                         d.commands_failed += 1;
+                    } else if completed {
+                        read.extend(c.reads.iter().map(String::as_str));
+                    }
+                    if completed && c.tests.is_some() {
+                        d.tests = c.tests;
                     }
                 }
                 Detail::Subagent { .. } if !is_coordination(&item.detail) => d.subagents += 1,
@@ -862,10 +905,29 @@ impl SessionView {
             (_, ItemKind::UserMessage) => return None,
             (Detail::Text, ItemKind::Reasoning) => (ActivityKind::Thinking, String::new()),
             (Detail::Text, _) => (ActivityKind::Writing, String::new()),
-            (Detail::Command { command, .. }, _) => (
-                ActivityKind::Running,
-                first_line(&unwrap_shell(command)).unwrap_or_default(),
-            ),
+            (Detail::Command { command, .. }, _) => {
+                let c = self.command(&item.id);
+                let line = || first_line(&unwrap_shell(command)).unwrap_or_default();
+                match c.map(|c| c.kind) {
+                    Some(CommandKind::Test) => (ActivityKind::Testing, line()),
+                    Some(CommandKind::Build) => (ActivityKind::Building, line()),
+                    Some(CommandKind::Lint) => (ActivityKind::Checking, line()),
+                    Some(CommandKind::Search | CommandKind::List) => (ActivityKind::Searching, line()),
+                    Some(CommandKind::Read) if c.is_some_and(|c| !c.reads.is_empty()) => (
+                        ActivityKind::Reading,
+                        c.map(|c| {
+                            c.reads
+                                .iter()
+                                .map(|p| display_path(root, p))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default(),
+                    ),
+                    Some(CommandKind::Read) => (ActivityKind::Reading, line()),
+                    _ => (ActivityKind::Running, line()),
+                }
+            }
             (Detail::FileChange { files, .. }, _) => (
                 ActivityKind::Editing,
                 files
