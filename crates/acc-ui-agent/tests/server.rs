@@ -194,7 +194,9 @@ fn json_rpc_exchange() {
     );
 
     // A long line of many short strings, as a big table makes.
-    let rows: Vec<Value> = (0..4000).map(|i| json!([format!("r{i}"), "ü \"x\"", "\\"])).collect();
+    let rows: Vec<Value> = (0..4000)
+        .map(|i| json!([format!("r{i}"), "ü \"x\"", "\\"]))
+        .collect();
     let started = Instant::now();
     let r = s.call(tool_call(
         json!(10),
@@ -382,7 +384,11 @@ fn spec_ids_cant_be_reused() {
     let mut s = Server::start(&script, &dir, 30);
 
     s.send(&tool_call(json!(20), "acc_ui_ask", json!({ "spec": badge_spec("dup") })).to_string());
-    let again = s.call(tool_call(json!(21), "acc_ui_ask", json!({ "spec": badge_spec("dup") })));
+    let again = s.call(tool_call(
+        json!(21),
+        "acc_ui_ask",
+        json!({ "spec": badge_spec("dup") }),
+    ));
     assert_eq!(again["result"]["isError"], true, "{again}");
     assert!(text_of(&again).contains("already used"), "{again}");
     assert!(dir.join("s1/dup/waiting").exists());
@@ -392,7 +398,11 @@ fn spec_ids_cant_be_reused() {
     assert_eq!(r["id"], 20);
     assert!(text_of(&r).starts_with("acc-ui: dismissed"), "{r}");
 
-    let after = s.call(tool_call(json!(22), "acc_ui_ask", json!({ "spec": badge_spec("dup") })));
+    let after = s.call(tool_call(
+        json!(22),
+        "acc_ui_ask",
+        json!({ "spec": badge_spec("dup") }),
+    ));
     assert_eq!(after["result"]["isError"], true, "{after}");
     assert!(dir.join("s1/dup/answer.json").exists());
     // No late reply for the rejected calls.

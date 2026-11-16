@@ -70,9 +70,7 @@ pub fn server_script() -> String {
         ),
         (
             "@ERR_ID_USED@",
-            format!(
-                "{ERROR}: this spec.id was already used in this session; ask again with a new id."
-            ),
+            format!("{ERROR}: this spec.id was already used in this session; ask again with a new id."),
         ),
         (
             "@ERR_DIR@",
