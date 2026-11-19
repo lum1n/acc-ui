@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  check:
+    name: fmt, clippy, test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml, with its components.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  msrv:
+    name: rust-version (1.88)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install 1.88 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +1.88 check --workspace --all-targets --locked
+
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Allow-list in .cargo/audit.toml (RUSTSEC-2026-0374: basic-toml is
+      # unmaintained, pulled in by uniffi_bindgen -> askama, not fixable here).
+      - run: cargo audit -D warnings
+
+  shells:
+    name: MCP server under dash and busybox
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: docker pull -q debian:bookworm-slim && docker pull -q busybox:latest
+      - run: scripts/test-shells.sh
+
+  swift:
+    name: Swift bindings (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The runner image ships a Swift toolchain.
+      - run: swiftc --version
+      - name: Checked-in AccUICore wrapper matches the bindings
+        run: scripts/release.sh swift-sources --check
+      - name: Build and run the smoke program
+        run: scripts/ffi-smoke.sh swift
+
+  kotlin:
+    name: Kotlin bindings (JVM)
+    runs-on: ubuntu-24.04
+    env:
+      KOTLIN_VERSION: 2.4.21
+      KOTLIN_SHA256: 7cc140e76daf416a0424a5557f99afd7ca89ebd463ea1101261e3e01c33e75cd
+      JNA_VERSION: 5.19.1
+      JNA_SHA256: 4fb141dd8ef6b0585ffceea4bc49602fbc6312fa977e2c488794ea3e6aafecae
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Fetch kotlinc and JNA
+        run: |
+          mkdir -p "$RUNNER_TEMP/kt"
+          cd "$RUNNER_TEMP/kt"
+          curl -fsSLo kotlin.zip "https://github.com/JetBrains/kotlin/releases/download/v$KOTLIN_VERSION/kotlin-compiler-$KOTLIN_VERSION.zip"
+          curl -fsSLo jna.jar "https://repo1.maven.org/maven2/net/java/dev/jna/jna/$JNA_VERSION/jna-$JNA_VERSION.jar"
+          printf '%s  kotlin.zip\n%s  jna.jar\n' "$KOTLIN_SHA256" "$JNA_SHA256" | sha256sum -c -
+          unzip -q kotlin.zip
+          echo "KOTLINC=$RUNNER_TEMP/kt/kotlinc/bin/kotlinc" >>"$GITHUB_ENV"
+          echo "JNA_JAR=$RUNNER_TEMP/kt/jna.jar" >>"$GITHUB_ENV"
+      - name: Build and run the smoke program
+        run: scripts/ffi-smoke.sh kotlin
+
+  scripts:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      # shellcheck is preinstalled on the runner image.
+      - run: shellcheck scripts/*.sh
+      # server.sh holds awk programs in single quotes on purpose (SC2016, info);
+      # it is content-hashed on hosts, so it isn't edited for lint directives.
+      - run: shellcheck --severity=warning crates/acc-ui-agent/src/server.sh

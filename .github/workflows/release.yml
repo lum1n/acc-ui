@@ -1,0 +1,124 @@
+# Publishes a GitHub release for a v* tag:
+#   AccUIFFI.xcframework.zip       the binary target of the root Package.swift
+#   acc-ui-kotlin-<tag>.tar.gz     the generated Kotlin bindings (sources)
+#   SHA256SUMS
+# with the tag's CHANGELOG.md section as the notes.
+#
+# SwiftPM needs the tagged Package.swift to name its own release's checksum,
+# which only exists once the xcframework is built. So after the build this
+# workflow commits Package.swift with the new url/checksum on top of the
+# tagged commit and moves the tag onto that commit (annotated, by
+# github-actions; a signature on the original tag is not kept). Pushes made
+# with GITHUB_TOKEN start no workflows, so moving the tag does not loop. If the tag
+# was on the tip of main, the commit is pushed to main too.
+#
+# To release: bump [workspace.package] version in Cargo.toml, add the
+# CHANGELOG.md section, merge, then tag main: git tag v0.1.0 && git push origin v0.1.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  xcframework:
+    runs-on: macos-15
+    outputs:
+      checksum: ${{ steps.zip.outputs.checksum }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Checked-in AccUICore wrapper matches the bindings
+        run: scripts/release.sh swift-sources --check
+      - run: scripts/build-xcframework.sh
+      - name: The packaged wrapper is the checked-in one
+        run: diff -u Sources/AccUICore/acc_ui_ffi.swift bindings/swift/Sources/AccUICore/acc_ui_ffi.swift
+      - name: Zip and checksum
+        id: zip
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist"
+          (cd bindings/swift && ditto -c -k --sequesterRsrc --keepParent AccUIFFI.xcframework "$RUNNER_TEMP/dist/AccUIFFI.xcframework.zip")
+          # SwiftPM's checksum is the zip's SHA-256 (what `swift package compute-checksum` prints).
+          checksum="$(shasum -a 256 "$RUNNER_TEMP/dist/AccUIFFI.xcframework.zip" | cut -d' ' -f1)"
+          echo "checksum=$checksum" >>"$GITHUB_OUTPUT"
+          echo "AccUIFFI.xcframework.zip checksum: $checksum" >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: xcframework
+          path: ${{ runner.temp }}/dist/AccUIFFI.xcframework.zip
+          if-no-files-found: error
+
+  kotlin:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate and pack the Kotlin bindings
+        run: |
+          scripts/kotlin-bindings.sh "$RUNNER_TEMP/kotlin"
+          mkdir -p "$RUNNER_TEMP/dist"
+          tar -czf "$RUNNER_TEMP/dist/acc-ui-kotlin-$TAG.tar.gz" -C "$RUNNER_TEMP/kotlin" .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kotlin
+          path: ${{ runner.temp }}/dist/acc-ui-kotlin-${{ github.ref_name }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [xcframework, kotlin]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The tag matches the workspace version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)"
+          [ "v$version" = "$TAG" ] || { echo "::error::tag $TAG but Cargo.toml says $version"; exit 1; }
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and notes
+        run: |
+          (cd dist && sha256sum -- * >SHA256SUMS && cat SHA256SUMS)
+          scripts/release.sh notes "$TAG" >"$RUNNER_TEMP/notes.md"
+      - name: Point Package.swift at this release and move the tag
+        env:
+          CHECKSUM: ${{ needs.xcframework.outputs.checksum }}
+        run: |
+          tagged="$(git rev-parse HEAD)"
+          scripts/release.sh package "$TAG" "$CHECKSUM"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release: Package.swift for $TAG"
+          git tag -f -a "$TAG" -m "acc-ui $TAG"
+          git push --force origin "refs/tags/$TAG"
+          if [ "$(git rev-parse origin/main)" = "$tagged" ]; then
+            git push origin HEAD:main || echo "::warning::could not push the Package.swift commit to main; merge $TAG into main by hand"
+          else
+            echo "::warning::$TAG was not on the tip of main; merge $TAG into main by hand to carry the Package.swift update"
+          fi
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$TAG" dist/* --verify-tag --title "acc-ui $TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}"

@@ -17,7 +17,7 @@ pulldown-cmark = { version = "0.13", default-features = false }
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = "2"
 uniffi = "0.32"
 

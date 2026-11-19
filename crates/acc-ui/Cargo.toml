@@ -1,6 +1,6 @@
 [package]
 name = "acc-ui"
-description = "The acc-ui/1 spec for rich agent output: validation, fences, tool recognition, the host MCP server"
+description = "Agent sessions as native UI: the session model (ACC events in, regions out) and the acc-ui/1 component spec with validation, fences and markdown content"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
