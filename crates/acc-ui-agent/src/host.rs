@@ -69,6 +69,10 @@ pub fn server_script() -> String {
             format!("{ERROR}: acc_ui_ask needs spec.id, 1-64 of A-Z a-z 0-9 . _ -, unique in this session."),
         ),
         (
+            "@ERR_ID_USED@",
+            format!("{ERROR}: this spec.id was already used in this session; ask again with a new id."),
+        ),
+        (
             "@ERR_DIR@",
             format!("{ERROR}: can't create the answer directory."),
         ),
@@ -79,7 +83,9 @@ pub fn server_script() -> String {
         debug_assert!(!v.contains(['"', '\\', '$', '`']), "{k}");
         s = s.replace(k, &v);
     }
-    s.replace("@TOOLS@", &tools)
+    // The tool list goes into single quotes, not a heredoc in `$(...)`,
+    // which bash 3.2 (macOS's sh) misparses when the text holds a quote.
+    s.replace("@TOOLS@", &tools.replace('\'', "'\\''"))
 }
 
 /// The `tools/list` result the server answers with. The spec schema goes

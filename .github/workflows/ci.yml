@@ -51,7 +51,7 @@ jobs:
       - run: cargo audit -D warnings
 
   shells:
-    name: MCP server under dash and busybox
+    name: MCP server under dash, busybox and macOS-like sh
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

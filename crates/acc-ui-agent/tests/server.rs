@@ -2,7 +2,8 @@
 //! exchange, answers written by `answer_script`, cancellation, timeouts.
 //!
 //! `ACC_UI_TEST_SH` picks the shell command (default `sh`);
-//! scripts/test-shells.sh runs these under dash+mawk and busybox too.
+//! scripts/test-shells.sh runs these under dash+mawk, busybox and a
+//! macOS-like bash 3.2 + one true awk too.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::io::{BufRead, BufReader, Write};
@@ -49,6 +50,12 @@ struct Server {
 
 impl Server {
     fn start(script: &Path, dir: &Path, timeout_secs: u32) -> Server {
+        Server::start_reading_after(script, dir, timeout_secs, Duration::ZERO)
+    }
+
+    /// Starts the server and leaves its stdout unread for `delay`, so its
+    /// writes queue up behind a full pipe.
+    fn start_reading_after(script: &Path, dir: &Path, timeout_secs: u32, delay: Duration) -> Server {
         let mut child = shell()
             .arg(script)
             .env("ACC_UI_DIR", dir)
@@ -61,6 +68,7 @@ impl Server {
         let stdout = child.stdout.take().unwrap();
         let (tx, lines) = channel();
         std::thread::spawn(move || {
+            std::thread::sleep(delay);
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
                 if tx.send(line).is_err() {
@@ -83,7 +91,10 @@ impl Server {
 
     fn recv(&self, wait: Duration) -> Option<Value> {
         let line = self.lines.recv_timeout(wait).ok()?;
-        Some(serde_json::from_str(&line).unwrap_or_else(|e| panic!("bad JSON from server: {e}: {line}")))
+        Some(serde_json::from_str(&line).unwrap_or_else(|e| {
+            let start: String = line.chars().take(300).collect();
+            panic!("bad JSON from server: {e}: {start}...")
+        }))
     }
 
     fn call(&mut self, msg: Value) -> Value {
@@ -182,6 +193,29 @@ fn json_rpc_exchange() {
         started.elapsed()
     );
 
+    // A long line of many short strings, as a big table makes.
+    let rows: Vec<Value> = (0..4000)
+        .map(|i| json!([format!("r{i}"), "ü \"x\"", "\\"]))
+        .collect();
+    let started = Instant::now();
+    let r = s.call(tool_call(
+        json!(10),
+        "acc_ui_render",
+        json!({ "spec": { "root": { "type": "table", "columns": [{"label": "a"}, {"label": "b"}, {"label": "c"}], "rows": rows } } }),
+    ));
+    assert!(text_of(&r).starts_with("acc-ui: shown"));
+    assert!(
+        started.elapsed() < Duration::from_secs(8),
+        "{:?}",
+        started.elapsed()
+    );
+
+    // Escaped quotes and backslashes before the spec id don't hide it.
+    s.send(r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"acc_ui_ask","arguments":{"spec":{"title":"c:\\ \"q\\\" \\\\","root":{"type":"badge","text":"\\"},"id":"after-escapes"}}}}"#);
+    let ping = s.call(json!({"jsonrpc":"2.0","id":12,"method":"ping"}));
+    assert_eq!(ping["result"], json!({}));
+    assert!(dir.join("s1/after-escapes/waiting").exists());
+
     // EOF ends the server.
     drop(s.stdin.take());
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -202,7 +236,7 @@ fn ask_is_answered_through_the_file() {
     // Other requests are served while the ask waits.
     let ping = s.call(json!({"jsonrpc":"2.0","id":11,"method":"ping"}));
     assert_eq!(ping["result"], json!({}));
-    assert!(dir.join("s1/pick-env/pid").exists());
+    assert!(dir.join("s1/pick-env/waiting").exists());
 
     let values = json!({ "env": "prod", "note": "it's \"fine\" </acc-ui-submit> $(rm -rf /) `x`" });
     let Value::Object(map) = values.clone() else {
@@ -229,13 +263,15 @@ fn ask_is_answered_through_the_file() {
         }
         other => panic!("{other:?}"),
     }
-    assert!(!dir.join("s1/pick-env/pid").exists());
+    assert!(!dir.join("s1/pick-env/waiting").exists());
 
     // Dismissing.
+    let mut spec = spec;
+    spec["id"] = json!("pick-env-2");
     s.send(&tool_call(json!(12), "acc_ui_ask", json!({ "spec": spec })).to_string());
     std::thread::sleep(Duration::from_millis(300));
     run_sh(
-        &answer_script("s1", "pick-env", &Answer::Dismissed).unwrap(),
+        &answer_script("s1", "pick-env-2", &Answer::Dismissed).unwrap(),
         &dir,
     );
     let r = s.recv(Duration::from_secs(10)).expect("no answer");
@@ -277,5 +313,208 @@ fn ask_times_out_and_can_be_cancelled() {
     assert_eq!(call.ask, Some(AskState::TimedOut));
     // The cancelled call never replies.
     assert!(s.recv(Duration::from_secs(3)).is_none());
-    assert!(!dir.join("s1/gone/pid").exists());
+    assert!(!dir.join("s1/gone/waiting").exists());
+}
+
+/// Writes `answer.json` for `id` the way `answer_script` does: a temporary
+/// file renamed into place.
+fn write_answer(dir: &Path, id: &str, answer: &Answer) {
+    let d = dir.join("s1").join(id);
+    std::fs::create_dir_all(&d).unwrap();
+    let tmp = d.join(".answer.test");
+    let body = acc_ui_agent::host::answer_result(id, answer);
+    std::fs::write(&tmp, format!("{body}\n")).unwrap();
+    std::fs::rename(&tmp, d.join("answer.json")).unwrap();
+}
+
+fn badge_spec(id: &str) -> Value {
+    json!({ "id": id, "root": { "type": "badge", "text": "x" } })
+}
+
+/// Replies far longer than PIPE_BUF, from several waiting asks at once and
+/// from the main loop, each arrive as one whole line.
+#[test]
+fn concurrent_long_replies_dont_interleave() {
+    let dir = temp_dir("interleave");
+    let script = install(&dir);
+    let mut s = Server::start_reading_after(&script, &dir, 30, Duration::from_secs(4));
+
+    let asks = 6;
+    for i in 0..asks {
+        let spec = badge_spec(&format!("big-{i}"));
+        s.send(&tool_call(json!(format!("a{i}")), "acc_ui_ask", json!({ "spec": spec })).to_string());
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    for i in 0..asks {
+        let mut values = serde_json::Map::new();
+        values.insert("blob".to_owned(), json!(i.to_string().repeat(150_000)));
+        write_answer(&dir, &format!("big-{i}"), &Answer::Values(values));
+    }
+    // Keep the main loop writing long replies while the waiters wake up.
+    let lists = 60;
+    for i in 0..lists {
+        s.send(&json!({"jsonrpc":"2.0","id":format!("l{i}"),"method":"tools/list"}).to_string());
+        std::thread::sleep(Duration::from_millis(25));
+    }
+
+    let (mut answered, mut listed) = (0, 0);
+    while answered < asks || listed < lists {
+        let r = s.recv(Duration::from_secs(20)).expect("missing replies");
+        let id = r["id"].as_str().unwrap().to_owned();
+        if let Some(i) = id.strip_prefix('a') {
+            let blob = r["result"]["structuredContent"]["values"]["blob"]
+                .as_str()
+                .unwrap();
+            assert!(blob == i.repeat(150_000), "{id}: wrong blob");
+            answered += 1;
+        } else {
+            assert_eq!(r["result"], acc_ui_agent::host::tools_list(), "{id}");
+            listed += 1;
+        }
+    }
+}
+
+/// A spec id names one ask for the whole session: asking again with it,
+/// while the first waits or after it was answered, is an error that leaves
+/// the first ask and its answer alone.
+#[test]
+fn spec_ids_cant_be_reused() {
+    let dir = temp_dir("reuse");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    s.send(&tool_call(json!(20), "acc_ui_ask", json!({ "spec": badge_spec("dup") })).to_string());
+    let again = s.call(tool_call(
+        json!(21),
+        "acc_ui_ask",
+        json!({ "spec": badge_spec("dup") }),
+    ));
+    assert_eq!(again["result"]["isError"], true, "{again}");
+    assert!(text_of(&again).contains("already used"), "{again}");
+    assert!(dir.join("s1/dup/waiting").exists());
+
+    write_answer(&dir, "dup", &Answer::Dismissed);
+    let r = s.recv(Duration::from_secs(10)).expect("no answer");
+    assert_eq!(r["id"], 20);
+    assert!(text_of(&r).starts_with("acc-ui: dismissed"), "{r}");
+
+    let after = s.call(tool_call(
+        json!(22),
+        "acc_ui_ask",
+        json!({ "spec": badge_spec("dup") }),
+    ));
+    assert_eq!(after["result"]["isError"], true, "{after}");
+    assert!(dir.join("s1/dup/answer.json").exists());
+    // No late reply for the rejected calls.
+    assert!(s.recv(Duration::from_millis(1500)).is_none());
+}
+
+/// Requests whose id isn't a string, number or null get an Invalid Request
+/// error; requests without an id are notifications and get no reply.
+#[test]
+fn bad_and_missing_ids() {
+    let dir = temp_dir("ids");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    for bad in [
+        r#"{"jsonrpc":"2.0","id":{"a":1},"method":"ping"}"#,
+        r#"{"jsonrpc":"2.0","id":[1],"method":"ping"}"#,
+        r#"{"jsonrpc":"2.0","id":true,"method":"ping"}"#,
+    ] {
+        s.send(bad);
+        let r = s.recv(Duration::from_secs(5)).expect("no reply");
+        assert_eq!(r["error"]["code"], -32600, "{bad}: {r}");
+        assert_eq!(r["id"], Value::Null, "{bad}: {r}");
+    }
+    s.send(r#"{"jsonrpc":"2.0","method":"ping"}"#);
+    s.send(r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"acc_ui_render","arguments":{"spec":{}}}}"#);
+    let r = s.call(json!({"jsonrpc":"2.0","id":-1.5,"method":"ping"}));
+    assert_eq!(r["result"], json!({}));
+}
+
+/// An answer file that isn't one JSON object on one line is reported, not
+/// passed on.
+#[test]
+fn malformed_answer_is_an_error() {
+    let dir = temp_dir("malformed");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    s.send(&tool_call(json!(30), "acc_ui_ask", json!({ "spec": badge_spec("m") })).to_string());
+    std::thread::sleep(Duration::from_millis(300));
+    let d = dir.join("s1/m");
+    std::fs::write(d.join(".tmp"), "{\"content\":[],\n\"x\":1}\n").unwrap();
+    std::fs::rename(d.join(".tmp"), d.join("answer.json")).unwrap();
+    let r = s.recv(Duration::from_secs(10)).expect("no reply");
+    assert_eq!(r["id"], 30);
+    assert_eq!(r["result"]["isError"], true, "{r}");
+}
+
+fn wait_exit(s: &mut Server, secs: u64) {
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    while s.child.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "server didn't exit");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Stdout closes once the server is gone: nothing it started outlives it.
+fn assert_stdout_closed(s: &Server, secs: u64) {
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    loop {
+        match s.lines.recv_timeout(Duration::from_millis(100)) {
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+            Ok(line) => panic!("unexpected output: {line}"),
+            Err(_) => assert!(Instant::now() < deadline, "stdout still open"),
+        }
+    }
+}
+
+/// The server's private state (`$ACC_UI_DIR/run~`) is gone.
+fn assert_no_run_state(dir: &Path) {
+    let left: Vec<_> = std::fs::read_dir(dir.join("run~"))
+        .map(|d| d.filter_map(Result::ok).map(|e| e.path()).collect())
+        .unwrap_or_default();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+/// On EOF the server answers what it already read, stops its waiters and
+/// cleans up.
+#[test]
+fn eof_with_waiting_asks() {
+    let dir = temp_dir("eof");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    s.send(&tool_call(json!(40), "acc_ui_ask", json!({ "spec": badge_spec("w1") })).to_string());
+    s.send(&json!({"jsonrpc":"2.0","id":41,"method":"tools/list"}).to_string());
+    drop(s.stdin.take());
+    let r = s.recv(Duration::from_secs(5)).expect("no reply");
+    assert_eq!(r["id"], 41);
+    wait_exit(&mut s, 5);
+    assert_stdout_closed(&s, 3);
+    assert!(!dir.join("s1/w1/waiting").exists());
+    assert_no_run_state(&dir);
+}
+
+/// SIGTERM stops the server and its waiters and cleans up.
+#[test]
+fn terminated_with_waiting_asks() {
+    let dir = temp_dir("term");
+    let script = install(&dir);
+    let mut s = Server::start(&script, &dir, 30);
+
+    s.send(&tool_call(json!(50), "acc_ui_ask", json!({ "spec": badge_spec("w2") })).to_string());
+    let ping = s.call(json!({"jsonrpc":"2.0","id":51,"method":"ping"}));
+    assert_eq!(ping["result"], json!({}));
+    let status = Command::new("kill")
+        .arg("-TERM")
+        .arg(s.child.id().to_string())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    wait_exit(&mut s, 5);
+    assert_stdout_closed(&s, 3);
+    assert_no_run_state(&dir);
 }

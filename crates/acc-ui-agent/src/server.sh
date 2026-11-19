@@ -10,8 +10,17 @@
 #
 # Environment: ACC_UI_SESSION (answers' directory, default "default"),
 # ACC_UI_DIR (default ~/.acc-ui), ACC_UI_ASK_TIMEOUT (seconds, default 900).
+#
+# State. <session>/<spec id>/ is made by the one ask that uses the id; it
+# holds the call's request id, "waiting" while the call waits, "cancelled"
+# once the client cancels it, and the client's answer.json. run~/<pid>.<n>/
+# is this process's own: each reply is written there as a file whose name
+# goes down a FIFO, and one writer process copies the files to stdout in
+# turn, so replies from concurrent waiters never interleave.
 set -u
 umask 077
+LC_ALL=C
+export LC_ALL
 
 ROOT="${ACC_UI_DIR:-$HOME/.acc-ui}"
 SESSION="${ACC_UI_SESSION:-default}"
@@ -19,12 +28,25 @@ case $SESSION in '' | . | .. | *[!A-Za-z0-9._-]*) SESSION=default ;; esac
 DIR="$ROOT/$SESSION"
 TIMEOUT="${ACC_UI_ASK_TIMEOUT:-900}"
 case $TIMEOUT in '' | *[!0-9]*) TIMEOUT=900 ;; esac
-WAITERS=""
+[ "${#TIMEOUT}" -le 9 ] || TIMEOUT=999999999
+NL='
+'
+RUN=""    # this process's state directory; empty when replies go straight out
+WRITER="" # pid of the writer process
+JOBS=""   # "<pid>:<spec id>" of each waiter
+TAG=m.    # reply file prefix: m. in the main loop, w.<spec id>. in a waiter
+SEQ=0
 
 # Prints, one per line, the raw JSON tokens of: id, method, params.name,
 # params.arguments.spec.id, params.protocolVersion, params.requestId, and
 # the type of params.arguments.spec ("o" object, "s" string, "" absent).
-# Empty lines for absent ones; nothing at all when the line isn't JSON.
+# Empty lines for absent ones; nothing at all when the line isn't JSON. An
+# object or array id comes out as "{" or "[".
+#
+# The line is split on quotes and on commas first, and only the pieces
+# between strings are walked a character at a time: substr() is linear in
+# the one true awk, which counts UTF-8 characters, so walking a whole long
+# line would be quadratic.
 SCAN='
 function path(   p, d) {
   p = ""
@@ -34,67 +56,136 @@ function path(   p, d) {
   }
   return p
 }
-function value(tok,   p) {
-  p = path()
+function wanted(p) {
+  return p == "id" || p == "method" || p == "params/name" || \
+    p == "params/arguments/spec/id" || p == "params/protocolVersion" || p == "params/requestId"
+}
+function value(p, tok) {
   if (p == "id") f_id = tok
   else if (p == "method") f_method = tok
   else if (p == "params/name") f_name = tok
   else if (p == "params/arguments/spec/id") f_spec_id = tok
   else if (p == "params/protocolVersion") f_pv = tok
   else if (p == "params/requestId") f_req = tok
-  else if (p == "params/arguments/spec" && substr(tok, 1, 1) == "\"") f_spec = "s"
+}
+# How many backslashes x ends with.
+function trailing(x,   l, c) {
+  l = length(x); c = 0
+  while (l > 0 && substr(x, l, 1) == "\\") { c++; l-- }
+  return c
+}
+# The string between the quotes before part a and after part b.
+function body(a, b,   t, k) {
+  t = P[a]
+  for (k = a + 1; k <= b; k++) t = t "\"" P[k]
+  return t
+}
+function string(a, b,   p) {
+  if (depth > 0 && kind[depth] == "o" && want[depth]) {
+    key[depth] = body(a, b); want[depth] = 0
+    return
+  }
+  p = path()
+  if (p == "params/arguments/spec") f_spec = "s"
+  else if (wanted(p)) value(p, "\"" body(a, b) "\"")
+}
+# Structure and bare values between two strings.
+function outside(x,   m, q, t, n, i, j, c, d) {
+  m = split(x, Q, ",")
+  for (q = 1; q <= m; q++) {
+    if (q > 1 && depth > 0 && kind[depth] == "o") want[depth] = 1
+    t = Q[q]; n = length(t); i = 1
+    while (i <= n) {
+      c = substr(t, i, 1)
+      if (c == "{" || c == "[") {
+        if (depth == 1 && key[1] == "id" && !want[1]) f_id = c
+        if (c == "{" && depth == 3 && path() == "params/arguments/spec") f_spec = "o"
+        depth++; kind[depth] = (c == "{") ? "o" : "a"; want[depth] = (c == "{"); key[depth] = ""
+      } else if (c == "}" || c == "]") {
+        depth--
+        if (depth < 0) { bad = 1; return }
+      } else if (c != ":" && c != " " && c != "\t" && c != "\r") {
+        j = i
+        while (j <= n) {
+          d = substr(t, j, 1)
+          if (d == "}" || d == "]" || d == " " || d == "\t" || d == "\r") break
+          j++
+        }
+        value(path(), substr(t, i, j - i)); i = j
+        continue
+      }
+      i++
+    }
+  }
 }
 {
-  s = $0; n = length(s); i = 1; depth = 0; bad = 0
+  depth = 0; bad = 0
   f_id = f_method = f_name = f_spec_id = f_pv = f_req = f_spec = ""
-  while (i <= n) {
-    c = substr(s, i, 1)
-    if (c == "\"") {
-      j = i + 1
-      while (j <= n) {
-        d = substr(s, j, 1)
-        if (d == "\\") { j += 2; continue }
-        if (d == "\"") break
-        j++
-      }
-      if (j > n) { bad = 1; break }
-      tok = substr(s, i, j - i + 1)
-      i = j + 1
-      if (depth > 0 && kind[depth] == "o" && want[depth]) {
-        key[depth] = substr(tok, 2, length(tok) - 2); want[depth] = 0
-      } else value(tok)
-      continue
-    }
-    if (c == "{") {
-      if (depth == 3 && path() == "params/arguments/spec") f_spec = "o"
-      depth++; kind[depth] = "o"; want[depth] = 1; key[depth] = ""; i++
-      continue
-    }
-    if (c == "[") { depth++; kind[depth] = "a"; want[depth] = 0; i++; continue }
-    if (c == "}" || c == "]") { depth--; i++; if (depth < 0) { bad = 1; break }; continue }
-    if (c == ",") { if (depth > 0 && kind[depth] == "o") want[depth] = 1; i++; continue }
-    if (c == ":" || c == " " || c == "\t" || c == "\r") { i++; continue }
-    j = i
-    while (j <= n) {
-      d = substr(s, j, 1)
-      if (d == "," || d == "}" || d == "]" || d == " " || d == "\t" || d == "\r") break
-      j++
-    }
-    value(substr(s, i, j - i)); i = j
+  n = split($0, P, "\"")
+  outside(P[1])
+  # Part k opens a string; an odd run of backslashes before a quote escapes it.
+  for (k = 2; k <= n && !bad; k += 2) {
+    a = k
+    while (k < n && trailing(P[k]) % 2) k++
+    if (k >= n) { bad = 1; break }
+    string(a, k)
+    outside(P[k + 1])
   }
-  if (bad || depth != 0 || substr(s, 1, 1) != "{") exit
+  if (bad || depth != 0 || substr($0, 1, 1) != "{") exit
   print f_id; print f_method; print f_name; print f_spec_id; print f_pv; print f_req; print f_spec
 }'
 
-send() { printf '%s\n' "$1"; }
+send() {
+  if [ -n "$RUN" ]; then
+    SEQ=$((SEQ + 1))
+    if printf '%s\n' "$1" >"$RUN/$TAG$SEQ" 2>/dev/null; then
+      printf '%s\n' "$TAG$SEQ" >&3
+      return
+    fi
+  fi
+  printf '%s\n' "$1"
+}
 reply() { send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"result\":$2}"; }
 fail() { send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"error\":{\"code\":$2,\"message\":\"$3\"}}"; }
 text_result() { reply "$1" "{\"content\":[{\"type\":\"text\",\"text\":\"$2\"}]${3:-}}"; }
 
-TOOLS=$(cat <<'ACC_UI_TOOLS'
-@TOOLS@
-ACC_UI_TOOLS
-)
+TOOLS='@TOOLS@'
+
+# Starts the writer, which reads reply file names from the FIFO and copies
+# each file to stdout whole. A name is short, so writing one to the FIFO is
+# atomic. Without a FIFO, replies go straight to stdout.
+start_writer() {
+  base="$ROOT/run~"
+  mkdir -p "$base" 2>/dev/null || return 0
+  n=0
+  until mkdir "$base/$$.$n" 2>/dev/null; do
+    n=$((n + 1))
+    [ "$n" -lt 100 ] || return 0
+  done
+  r="$base/$$.$n"
+  if ! mkfifo "$r/out" 2>/dev/null; then
+    rm -rf "$r"
+    return 0
+  fi
+  (
+    while IFS= read -r f; do
+      cat "$r/$f"
+      rm -f "$r/$f"
+    done
+  ) <"$r/out" &
+  WRITER=$!
+  exec 3>"$r/out"
+  RUN=$r
+}
+
+# Forgets the waiters that have finished.
+prune() {
+  keep=""
+  for j in $JOBS; do
+    if [ -f "$DIR/${j#*:}/waiting" ]; then keep="$keep $j"; fi
+  done
+  JOBS=$keep
+}
 
 ask() { # $1 request id token, $2 spec id token, $3 spec type
   if [ "$3" != o ]; then
@@ -110,56 +201,81 @@ ask() { # $1 request id token, $2 spec id token, $3 spec type
     return
   fi
   d="$DIR/$sid"
-  if ! mkdir -p "$d" 2>/dev/null; then
-    text_result "$1" "@ERR_DIR@" ',"isError":true'
+  # Making the directory claims the id, so an id that waits or was answered
+  # keeps its call and its answer.
+  if ! { mkdir -p "$DIR" && mkdir "$d"; } 2>/dev/null; then
+    if [ -d "$d" ]; then
+      text_result "$1" "@ERR_ID_USED@" ',"isError":true'
+    else
+      text_result "$1" "@ERR_DIR@" ',"isError":true'
+    fi
     return
   fi
-  rm -f "$d/answer.json"
   printf '%s\n' "$1" >"$d/request"
+  : >"$d/waiting"
+  prune
   (
+    TAG="w.$sid."
     waited=0
-    while [ "$waited" -lt "$TIMEOUT" ]; do
+    while [ ! -f "$d/cancelled" ]; do
       if [ -s "$d/answer.json" ]; then
         answer=$(cat "$d/answer.json")
-        rm -f "$d/pid"
         case $answer in
+          *"$NL"*) text_result "$1" "@ERR_ANSWER@" ',"isError":true' ;;
           '{'*'}') reply "$1" "$answer" ;;
           *) text_result "$1" "@ERR_ANSWER@" ',"isError":true' ;;
         esac
-        exit 0
+        break
       fi
-      sleep 1
+      if [ "$waited" -ge "$TIMEOUT" ]; then
+        text_result "$1" "@TIMED_OUT@"
+        break
+      fi
+      # A killed waiter's sleep lives on for up to a second: keep it off
+      # the FIFO and the client's pipes.
+      # shellcheck disable=SC2217
+      sleep 1 </dev/null >/dev/null 2>&1 3>&-
       waited=$((waited + 1))
     done
-    rm -f "$d/pid"
-    text_result "$1" "@TIMED_OUT@"
+    rm -f "$d/waiting"
   ) &
-  printf '%s\n' "$!" >"$d/pid"
-  WAITERS="$WAITERS $!"
+  JOBS="$JOBS $!:$sid"
 }
 
 cancel() { # $1 request id token
   [ -n "$1" ] || return 0
-  for r in "$DIR"/*/request; do
-    [ -f "$r" ] || continue
-    if [ "$(cat "$r")" = "$1" ]; then
-      p="${r%/request}/pid"
-      [ -f "$p" ] && kill "$(cat "$p")" 2>/dev/null
-      rm -f "$p"
+  for j in $JOBS; do
+    d="$DIR/${j#*:}"
+    if [ -f "$d/waiting" ] && [ "$(cat "$d/request" 2>/dev/null)" = "$1" ]; then
+      : >"$d/cancelled"
     fi
   done
 }
 
-stop() {
-  # shellcheck disable=SC2086
-  [ -n "$WAITERS" ] && kill $WAITERS 2>/dev/null
+stop() { # $1 "drain" to send the replies already made
+  trap '' INT TERM HUP PIPE
+  for j in $JOBS; do
+    d="$DIR/${j#*:}"
+    if [ -f "$d/waiting" ]; then
+      kill "${j%%:*}" 2>/dev/null
+      rm -f "$d/waiting"
+    fi
+  done
+  if [ -n "$RUN" ]; then
+    exec 3>&-
+    [ "${1:-}" = drain ] || kill "$WRITER" 2>/dev/null
+    wait "$WRITER" 2>/dev/null
+    rm -rf "$RUN"
+  fi
   exit 0
 }
-trap stop INT TERM HUP
+
+start_writer
+trap stop INT TERM HUP PIPE
 
 while IFS= read -r line || [ -n "$line" ]; do
   case $line in *[![:space:]]*) ;; *) continue ;; esac
-  fields=$(printf '%s\n' "$line" | LC_ALL=C awk "$SCAN")
+  fields=$(printf '%s\n' "$line" | awk "$SCAN")
   if [ -z "$fields" ]; then
     fail null -32700 "Parse error"
     continue
@@ -175,6 +291,22 @@ while IFS= read -r line || [ -n "$line" ]; do
   } <<ACC_UI_FIELDS
 $fields
 ACC_UI_FIELDS
+  # The id goes back verbatim, so it must be a string, a number or null.
+  case $id in
+    '' | '"'*'"' | null) ;;
+    [-0-9]*) case $id in *[!0-9eE.+-]*) id=bad ;; esac ;;
+    *) id=bad ;;
+  esac
+  if [ "$id" = bad ]; then
+    fail null -32600 "Invalid Request"
+    continue
+  fi
+  case $method in
+    '"notifications/cancelled"') cancel "$req"; continue ;;
+    '"notifications/'*) continue ;;
+  esac
+  # Without an id it's a notification, which gets no reply.
+  [ -n "$id" ] || continue
   case $method in
     '"initialize"')
       case $pv in '"'*'"') ;; *) pv='"2025-06-18"' ;; esac
@@ -189,9 +321,7 @@ ACC_UI_FIELDS
         *) fail "$id" -32602 "Unknown tool" ;;
       esac
       ;;
-    '"notifications/cancelled"') cancel "$req" ;;
-    '"notifications/'*) ;;
-    *) [ -n "$id" ] && fail "$id" -32601 "Method not found" ;;
+    *) fail "$id" -32601 "Method not found" ;;
   esac
 done
-stop
+stop drain
