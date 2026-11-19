@@ -8,6 +8,19 @@ pub fn dir(sub: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(sub)
 }
 
+/// The names of the recorded sessions in `tests/sessions`, sorted.
+pub fn recorded() -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir("sessions"))
+        .unwrap()
+        .filter_map(|e| {
+            let name = e.unwrap().file_name().into_string().unwrap();
+            name.strip_suffix(".ndjson").map(str::to_owned)
+        })
+        .collect();
+    names.sort();
+    names
+}
+
 /// Compares `actual` with the file at `path`; with `UPDATE_GOLDEN=1` set,
 /// writes it instead.
 pub fn golden(path: &Path, actual: &str) {

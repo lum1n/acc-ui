@@ -1,0 +1,65 @@
+[
+  {
+    "kind": "user_message",
+    "nodes": [
+      "markdown"
+    ],
+    "summary": ""
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure",
+      "file",
+      "code"
+    ],
+    "summary": "Read greet.py"
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure"
+    ],
+    "summary": "Worked select:ExitPlanMode"
+  },
+  {
+    "kind": "file_change",
+    "nodes": [
+      "disclosure",
+      "diff"
+    ],
+    "summary": "Created /home/user/.claude/plans/plan-a-small-change-compressed-galaxy.md +9 −0"
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure",
+      "code"
+    ],
+    "summary": "Planned"
+  },
+  {
+    "kind": "file_change",
+    "nodes": [
+      "disclosure",
+      "diff"
+    ],
+    "summary": "Edited greet.py +1 −1"
+  },
+  {
+    "kind": "command_execution",
+    "nodes": [
+      "disclosure",
+      "output"
+    ],
+    "summary": "$ python3 -c 'from greet import greet; print(repr(greet(\"  Bob  \")))'"
+  },
+  {
+    "kind": "agent_message",
+    "nodes": [
+      "stack",
+      "markdown"
+    ],
+    "summary": ""
+  }
+]

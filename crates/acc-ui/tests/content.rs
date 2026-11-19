@@ -173,8 +173,8 @@ fn replay(name: &str) -> (SessionView, Vec<acc_ui::session::Ask>) {
 /// summaries and fallbacks are golden.
 #[test]
 fn recorded_items_translate() {
-    for name in ["claude-fix-and-review", "codex-fix-and-review"] {
-        let (view, _) = replay(name);
+    for name in common::recorded() {
+        let (view, _) = replay(&name);
         let mut lines = Vec::new();
         for item in view.items() {
             let Some(out) = view.item_spec(&item.id) else {

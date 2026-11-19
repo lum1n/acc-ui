@@ -22,56 +22,48 @@ fn try_unwrap(command: &str) -> Option<String> {
     unquote(script.trim())
 }
 
-/// One shell word in single or double quotes, or a bare script.
+/// One shell word that starts with a quote, or a bare script.
 fn unquote(s: &str) -> Option<String> {
-    let first = s.chars().next()?;
-    match first {
-        '\'' => single(s),
-        '"' => double(s),
+    match s.chars().next()? {
+        '\'' | '"' => word(s),
         _ => Some(s.to_owned()),
     }
 }
 
-/// `'...'`, with `'\''` for a quote inside.
-fn single(s: &str) -> Option<String> {
+/// `s` as exactly one shell word, its quoted and bare pieces run together:
+/// `'it'\''s'`, or Codex's `"rg -g '"'!*.md'"'"`. In `"..."` a backslash
+/// escapes `"`, `\`, `$` and `` ` ``.
+fn word(s: &str) -> Option<String> {
     let mut out = String::new();
-    let mut rest = s;
-    loop {
-        rest = rest.strip_prefix('\'')?;
-        let end = rest.find('\'')?;
-        out.push_str(&rest[..end]);
-        rest = &rest[end + 1..];
-        if rest.is_empty() {
-            return Some(out);
-        }
-        rest = rest.strip_prefix("\\'")?;
-        out.push('\'');
-        if rest.is_empty() {
-            return Some(out);
-        }
-    }
-}
-
-/// `"..."`, where a backslash escapes `"`, `\`, `$` and `` ` ``.
-fn double(s: &str) -> Option<String> {
-    let inner = s.strip_prefix('"')?;
-    let mut out = String::new();
-    let mut chars = inner.chars();
+    let mut chars = s.chars();
     while let Some(c) = chars.next() {
         match c {
-            '"' => return chars.as_str().is_empty().then_some(out),
-            '\\' => match chars.next()? {
-                e @ ('"' | '\\' | '$' | '`') => out.push(e),
-                '\n' => {}
-                e => {
-                    out.push('\\');
-                    out.push(e);
+            '\'' => loop {
+                match chars.next()? {
+                    '\'' => break,
+                    c => out.push(c),
                 }
             },
+            '"' => loop {
+                match chars.next()? {
+                    '"' => break,
+                    '\\' => match chars.next()? {
+                        e @ ('"' | '\\' | '$' | '`') => out.push(e),
+                        '\n' => {}
+                        e => {
+                            out.push('\\');
+                            out.push(e);
+                        }
+                    },
+                    c => out.push(c),
+                }
+            },
+            '\\' => out.push(chars.next()?),
+            c if c.is_whitespace() => return None,
             c => out.push(c),
         }
     }
-    None
+    Some(out)
 }
 
 #[cfg(test)]
@@ -92,6 +84,11 @@ mod tests {
         assert_eq!(
             unwrap_shell("/usr/bin/zsh -lc \"python3 -c 'print(1)'\""),
             "python3 -c 'print(1)'"
+        );
+        // Codex's quoting of a `'` in a double-quoted script.
+        assert_eq!(
+            unwrap_shell(r#"/usr/bin/zsh -lc "rg --files -g '"'!**/.git/**'"'""#),
+            "rg --files -g '!**/.git/**'"
         );
     }
 

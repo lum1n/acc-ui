@@ -214,8 +214,9 @@ pub fn answer_result(id: &str, answer: &Answer) -> Value {
 
 /// A shell script that answers the waiting `acc_ui_ask` for spec `id` in
 /// `session`. It writes a temporary file and renames it into place, so the
-/// server never reads half an answer. Answering when no call waits leaves
-/// the file for nobody; send [`crate::submit_prompt`] then instead.
+/// server never reads half an answer. An answer written just before the
+/// call reaches the server still counts. Answering a call that already
+/// ended leaves the file for nobody; send [`crate::submit_prompt`] then.
 pub fn answer_script(session: &str, id: &str, answer: &Answer) -> Result<String, String> {
     for (what, v) in [("session", session), ("id", id)] {
         if !valid_id(v) {

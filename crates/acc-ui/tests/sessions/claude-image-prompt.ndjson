@@ -1,0 +1,23 @@
+{"type": "commands_changed"}
+{"type": "options_changed"}
+{"type": "state_changed", "state": {"state": "idle"}, "message": null, "source": "native", "observed_at_ms": 1794868680730}
+{"type": "state_changed", "state": {"state": "working", "progress": null}, "message": null, "source": "native", "observed_at_ms": 1794868680730}
+{"type": "commands_changed"}
+{"type": "options_changed"}
+{"type": "session_started", "harness": "claude", "native_id": "b3374ed4-2d2e-4778-b10d-73f61d327af3", "model": "claude-sonnet-5-5"}
+{"type": "quota", "account": null, "plan": null, "windows": [{"id": "five_hour", "used_percent": 16.0, "window_minutes": 300, "resets_at": 1794873600, "status": "allowed"}, {"id": "seven_day", "used_percent": 19.0, "window_minutes": 10080, "resets_at": 1794877200, "status": null}]}
+{"type": "title_changed", "title": "Colours in image"}
+{"type": "item_started", "id": "1e76d220-fff4-4b75-b706-f4147f6789b1", "kind": "user_message", "detail": {"type": "text"}, "native": {"images": [{"bytes": 145, "media_type": "image/png", "sha256": "cc4ecc7934027a14a5581e18633ed8237dd2d9782456ca0aa1965aed56b7b12e"}]}}
+{"type": "item_delta", "id": "1e76d220-fff4-4b75-b706-f4147f6789b1", "text": "Which two colours does this image show, and how are they arranged? One sentence."}
+{"type": "item_completed", "id": "1e76d220-fff4-4b75-b706-f4147f6789b1", "status": "completed", "detail": {"type": "text"}}
+{"type": "item_started", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "kind": "agent_message", "detail": {"type": "text"}}
+{"type": "item_delta", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "text": "The image is"}
+{"type": "item_delta", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "text": " split into"}
+{"type": "item_delta", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "text": " two vertical hal"}
+{"type": "item_delta", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "text": "ves: red"}
+{"type": "item_delta", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "text": " on the left and"}
+{"type": "item_delta", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "text": " blue on the right."}
+{"type": "item_completed", "id": "msg_011Ch7QeZCYeQVDbe1dv2i9z:0", "status": "completed", "detail": {"type": "text"}}
+{"type": "usage", "input_tokens": 2, "output_tokens": 25, "cache_read_tokens": 18572, "cache_write_tokens": 5017, "cost_usd": 0.0223049, "context_used": 23594, "context_window": 1000000}
+{"type": "state_changed", "state": {"state": "done"}, "message": null, "source": "native", "observed_at_ms": 1794868683100}
+{"type": "turn_completed"}

@@ -126,6 +126,56 @@ fn answered_dismissed_and_timed_out_asks() {
     );
 }
 
+/// A recorded Claude session with the acc_ui server, launched the way ACC
+/// passes `LaunchRequest.mcp_servers`: one render, then an ask answered
+/// with the answer script while the call waited.
+#[test]
+fn recorded_claude_session_with_the_server() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../acc-ui/tests/sessions/claude-acc-ui-agent.ndjson");
+    let mut view = SessionView::new();
+    let mut waiting = Vec::new();
+    for line in std::fs::read_to_string(path).unwrap().lines() {
+        view.apply_json(line).unwrap();
+        waiting.extend(open_agent_asks(&view).into_iter().map(|c| c.item_id));
+    }
+    waiting.dedup();
+
+    let [render, ask] = &agent_calls(&view)[..] else {
+        panic!("{:?}", agent_calls(&view))
+    };
+    assert_eq!(render.call.kind, UiCallKind::Render);
+    // Claude gave the render no id; normalizing gave it one.
+    assert!(render.spec_id().unwrap().starts_with("u-"));
+    assert!(
+        render.call.spec.errors.is_empty(),
+        "{:?}",
+        render.call.spec.errors
+    );
+    let nodes = render.call.spec.spec.as_ref().unwrap()["nodes"].to_string();
+    assert!(
+        nodes.contains("\"table\"") && nodes.contains("notes.txt"),
+        "{nodes}"
+    );
+    assert!(!render.awaits_answer());
+
+    assert_eq!(ask.call.kind, UiCallKind::Ask);
+    assert_eq!(ask.spec_id(), Some("pick-name"));
+    assert!(ask.call.spec.errors.is_empty(), "{:?}", ask.call.spec.errors);
+    // It waited for the answer while it ran, and took it.
+    assert_eq!(waiting, std::slice::from_ref(&ask.item_id));
+    let Some(AskState::Answered(s)) = &ask.call.ask else {
+        panic!("{:?}", ask.call.ask)
+    };
+    assert_eq!(
+        (s.id.as_str(), &s.values["name"]),
+        ("pick-name", &json!("Aurora"))
+    );
+    assert!(open_agent_asks(&view).is_empty());
+    assert_eq!(ask.answer("rec", Some(values())), None, "answered already");
+    assert_eq!((render.turn, ask.turn), (0, 0));
+}
+
 #[test]
 fn the_ask_tool_points_at_the_render_schema() {
     let tools = acc_ui_agent::host::tools_list();

@@ -1,0 +1,199 @@
+{
+  "turn_ends": [
+    {
+      "turn": 0,
+      "state": {
+        "state": "done"
+      },
+      "now": [],
+      "asks": 0,
+      "files": [
+        [
+          "/work/answers.txt",
+          "add",
+          3,
+          0,
+          0
+        ]
+      ],
+      "commands": [],
+      "subagents": [],
+      "digest": "Edited 1 file (+3 −0) · 1 other tool",
+      "outcome": "done",
+      "narrative": "I wrote your answers to `answers.txt`:\n\n```\nBlue\nCheese, Olives\nZephyr\n```"
+    }
+  ],
+  "final": {
+    "header": {
+      "harness": "claude",
+      "native_id": "0cd52ead-372e-411d-afe3-2c9bdfbf6c56",
+      "model": "claude-sonnet-5-5",
+      "title": "Colour, pizza and project survey",
+      "state": {
+        "state": "done"
+      },
+      "state_message": null,
+      "usage": {
+        "input_tokens": 6,
+        "output_tokens": 467,
+        "cache_read_tokens": 49741,
+        "cache_write_tokens": 26273,
+        "cost_usd": 0.114886,
+        "context_used": 26316,
+        "context_window": 1000000
+      },
+      "quota": {
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 12.0,
+            "window_minutes": 300,
+            "resets_at": 1794873600,
+            "status": "allowed"
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 19.0,
+            "window_minutes": 10080,
+            "resets_at": 1794877200
+          }
+        ]
+      },
+      "root": null,
+      "exited": false,
+      "exit_code": null,
+      "turns": 1
+    },
+    "now": [],
+    "plan": null,
+    "asks": [],
+    "files": [
+      {
+        "path": "/work/answers.txt",
+        "display": "/work/answers.txt",
+        "old_path": null,
+        "change": "add",
+        "added": 3,
+        "removed": 0,
+        "reads": 0,
+        "edits": [
+          {
+            "item_id": "toolu_01EtGgHeojN44bmXM6mxanRC",
+            "turn": 0,
+            "kind": "add",
+            "added": 3,
+            "removed": 0,
+            "hunks": [
+              {
+                "old_start": 0,
+                "old_lines": 0,
+                "new_start": 1,
+                "new_lines": 3,
+                "lines": [
+                  {
+                    "tag": "add",
+                    "text": "Blue"
+                  },
+                  {
+                    "tag": "add",
+                    "text": "Cheese, Olives"
+                  },
+                  {
+                    "tag": "add",
+                    "text": "Zephyr"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "turns": [
+          0
+        ]
+      }
+    ],
+    "commands": [],
+    "subagents": [],
+    "turns": [
+      {
+        "index": 0,
+        "prompt": "Before doing anything else, use the AskUserQuestion tool once to ask me three questions together: my favourite colour (single choice: Red, Green or Blue), which pizza toppings I want (multi-select: Cheese, Ham, Pineapple, Olives), and a name for the project (suggest two names). Then write my answers to answers.txt, one per line.",
+        "narrative": "I wrote your answers to `answers.txt`:\n\n```\nBlue\nCheese, Olives\nZephyr\n```",
+        "narrative_item": "msg_011Ch7QSU1B51D9ZEFgRnsL8:0",
+        "items": [
+          "8abbd402-2359-47dc-9889-84e2eb2f5143",
+          "toolu_01UqYVCuABr8bEX7CWNmgwPK",
+          "toolu_01EtGgHeojN44bmXM6mxanRC",
+          "msg_011Ch7QSU1B51D9ZEFgRnsL8:0"
+        ],
+        "steps": 2,
+        "digest": {
+          "files_changed": 1,
+          "files_created": 1,
+          "files_deleted": 0,
+          "lines_added": 3,
+          "lines_removed": 0,
+          "files_read": 0,
+          "commands": 0,
+          "commands_failed": 0,
+          "subagents": 0,
+          "tools": 1,
+          "tests": null,
+          "parts": [
+            {
+              "kind": "edited",
+              "files": 1,
+              "created": 1,
+              "deleted": 0,
+              "added": 3,
+              "removed": 0
+            },
+            {
+              "kind": "tools",
+              "count": 1
+            }
+          ],
+          "summary": "Edited 1 file (+3 −0) · 1 other tool"
+        },
+        "outcome": "done",
+        "open": false,
+        "started_at_ms": 1794868512546,
+        "ended_at_ms": 1794868518479,
+        "diff": null
+      }
+    ],
+    "notices": [],
+    "items": [
+      {
+        "id": "8abbd402-2359-47dc-9889-84e2eb2f5143",
+        "kind": "user_message",
+        "parent": null,
+        "turn": 0,
+        "status": "completed",
+        "text": "Before doing anything else, use the AskUserQuestion tool once to ask me three questions together: my favourite colour (single choice: Red, Green or Blue), which pizza toppings I want (multi-select: Cheese, Ham, Pineapple, Olives), and a name for the project (suggest two names). Then write my answers to answers.txt, one per line."
+      },
+      {
+        "id": "toolu_01UqYVCuABr8bEX7CWNmgwPK",
+        "kind": "tool_call",
+        "parent": null,
+        "turn": 0,
+        "status": "completed"
+      },
+      {
+        "id": "toolu_01EtGgHeojN44bmXM6mxanRC",
+        "kind": "file_change",
+        "parent": null,
+        "turn": 0,
+        "status": "completed"
+      },
+      {
+        "id": "msg_011Ch7QSU1B51D9ZEFgRnsL8:0",
+        "kind": "agent_message",
+        "parent": null,
+        "turn": 0,
+        "status": "completed",
+        "text": "I wrote your answers to `answers.txt`:\n\n```\nBlue\nCheese, Olives\nZephyr\n```"
+      }
+    ]
+  }
+}

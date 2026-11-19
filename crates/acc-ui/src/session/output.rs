@@ -452,7 +452,7 @@ fn cargo_diags(out: &str) -> DiagFacts {
             if let Some((_, rest)) = l.split_once("due to ") {
                 summarised_errors += sum(&counts(rest), &["previous"]);
             }
-        } else if l.starts_with("error[") || (l.starts_with("error:") && !l.starts_with("error: aborting")) {
+        } else if l.starts_with("error[") || (l.starts_with("error:") && !not_a_diagnostic(l)) {
             loose_errors += 1;
         } else if l.starts_with("warning: ") && l.contains(" generated ") {
             let n = counts(l.rsplit_once(" generated ").map_or("", |(_, r)| r));
@@ -475,6 +475,15 @@ fn cargo_diags(out: &str) -> DiagFacts {
         counts: (verdict.is_some() || d != Diagnostics::default()).then_some(d),
         verdict,
     }
+}
+
+/// Cargo's own `error:` lines that report no compiler finding: the end of
+/// a failed compile, and failed test targets (`error: test failed, to rerun
+/// pass `--lib``, `error: 2 targets failed:`).
+fn not_a_diagnostic(l: &str) -> bool {
+    l.starts_with("error: aborting")
+        || l.starts_with("error: test failed")
+        || (l.starts_with("error: ") && l.contains(" targets failed"))
 }
 
 /// Go: one `file.go:12:3: message` line per problem.
@@ -632,6 +641,11 @@ mod tests {
             (Some((0, 0)), Some(true))
         );
         assert_eq!(d(Family::Cargo, "cargo build", "   Compiling x\n"), (None, None));
+        // A failed test run compiled fine.
+        let failed = "    Finished `test` profile in 0.2s\ntest result: FAILED. 2 passed; 1 failed\n\nerror: test failed, to rerun pass `--lib`\n";
+        assert_eq!(d(Family::Cargo, "cargo test", failed), (Some((0, 0)), Some(true)));
+        let failed = "error: 2 targets failed:\n    `--lib`\n    `--test api`\n";
+        assert_eq!(d(Family::Cargo, "cargo test", failed), (None, None));
     }
 
     #[test]

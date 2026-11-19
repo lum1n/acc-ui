@@ -1,0 +1,56 @@
+[
+  {
+    "kind": "user_message",
+    "nodes": [
+      "markdown"
+    ],
+    "summary": ""
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure"
+    ],
+    "summary": "Worked select:mcp__acc_ui__acc_ui_render,mcp__acc_ui__acc_ui_ask"
+  },
+  {
+    "kind": "command_execution",
+    "nodes": [
+      "disclosure",
+      "output"
+    ],
+    "summary": "$ wc -l hello.py notes.txt"
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure",
+      "code"
+    ],
+    "summary": "Called"
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure",
+      "code"
+    ],
+    "summary": "Called"
+  },
+  {
+    "kind": "command_execution",
+    "nodes": [
+      "disclosure",
+      "output"
+    ],
+    "summary": "$ printf 'Aurora\\n' > name.txt"
+  },
+  {
+    "kind": "agent_message",
+    "nodes": [
+      "stack",
+      "markdown"
+    ],
+    "summary": ""
+  }
+]

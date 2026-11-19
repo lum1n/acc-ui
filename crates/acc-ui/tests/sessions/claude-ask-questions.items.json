@@ -1,0 +1,34 @@
+[
+  {
+    "kind": "user_message",
+    "nodes": [
+      "markdown"
+    ],
+    "summary": ""
+  },
+  {
+    "kind": "tool_call",
+    "nodes": [
+      "disclosure",
+      "code"
+    ],
+    "summary": "Worked"
+  },
+  {
+    "kind": "file_change",
+    "nodes": [
+      "disclosure",
+      "diff"
+    ],
+    "summary": "Created answers.txt +3 −0"
+  },
+  {
+    "kind": "agent_message",
+    "nodes": [
+      "stack",
+      "markdown",
+      "code"
+    ],
+    "summary": ""
+  }
+]
