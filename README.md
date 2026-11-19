@@ -108,7 +108,9 @@ let view = SessionView::from_transcript(&saved)?; // an ACC session snapshot or 
 `apply_json` takes ACC's event JSON (a line of `acc run --json`) and returns the
 `Changes` it made; `file(path)`, `command(id)`, `subagent(id)`, `turn(index)` and
 `ask(request_id)` fetch just what changed. `from_transcript` rebuilds the same state from what ACC saved, for
-history and for sessions picked up without their events. acc-ui reads ACC's events with its own tolerant types, so unknown
+history and for sessions picked up without their events. Without a snapshot's spec it
+infers the harness only where the items leave no doubt (Claude Code's `toolu_` calls to
+its own tools, Codex's `commandExecution` items). acc-ui reads ACC's events with its own tolerant types, so unknown
 events and fields are ignored rather than failing.
 
 Images: ACC keeps image bytes out of its events and sends references instead (media
@@ -135,7 +137,8 @@ cargo run -p acc-ui --example replay -- crates/acc-ui/tests/sessions/claude-fix-
 Plays a recorded session back through `SessionView` in a throwaway web viewer. Each frame
 carries only the regions its event changed. Space plays and pauses, the arrow keys step,
 and `?frame=N` or `?frame=end` opens at a frame. Without `--html`, the frames go to stdout
-as NDJSON. The viewer is a development tool for looking at the session model on real
+as NDJSON. Frames also carry the agent's own `acc_ui` calls with their specs (the
+example alone uses `acc-ui-agent`). The viewer is a development tool for looking at the session model on real
 sessions. Its look is not part of acc-ui.
 
 ## The render model
@@ -197,7 +200,10 @@ renders.
 - `SessionView::item_spec(id)`: any item as a spec, for a transcript view or an expanded
   step: messages as blocks; reasoning, commands (with `output`), file changes (with
   `diff`), tool calls and subagent runs as a `disclosure` whose summary says what
-  happened (`$ python3 -m unittest`, `Edited inventory.py +4 −3`).
+  happened (`$ python3 -m unittest`, `Edited inventory.py +4 −3`). A file read shows
+  the `file` (at its first line) and its content as code in the file's language;
+  file searches (Claude's Glob, Grep listing files) show a `file` per match. Reasoning
+  without text (Codex with summaries off) has no spec and isn't a step.
 - `SessionView::ask_spec(ask)`: a pending approval or question as a `request` whose
   options carry `answer` actions, with its questions and the plan to approve.
 
@@ -249,15 +255,35 @@ cost:
   `parse_submit` handle answers sent as a user message:
   `<acc-ui-submit id="deploy">{"choice":"rollback"}</acc-ui-submit>`.
 
-In a `SessionView` the calls are ordinary tool items. `agent_calls(view)`,
-`agent_call(view, item_id)` and `open_agent_asks(view)` (methods of `SessionView` in
-the bindings) find them with their spec and, for asks, where the answer stands. Show
-`AgentCall.spec` in place of `item_spec`. `AgentCall::answer(session, values)` picks
+In a `SessionView` the calls are ordinary tool items: core doesn't know the agent
+layer. `agent_calls(view)`, `agent_call(view, item_id)` and `open_agent_asks(view)`
+(methods of `SessionView` in the bindings) find them with their spec and, for asks,
+where the answer stands. `acc_ui_agent::item_spec(view, id)` is `item_spec` with a
+call's own spec (normalised as untrusted) in place of the raw tool call; the bindings'
+`itemSpec` is this one. `AgentCall::answer(session, values)` picks
 the delivery: the answer script while the call waits, or a submit prompt for the next
 turn once it timed out.
 
 The spec schema (about 13.7 KB) is sent once, with `acc_ui_render`; `acc_ui_ask` takes
 the same spec and points there, so the tool list is about 15 KB.
+
+## Known limitations
+
+Deliberate, for now:
+
+- Claude's Edit hunks come with `old_start` 0 (no line numbers), so apps show them as
+  snippets rather than located hunks.
+- Read detection is conservative: only `cat`, `head`, `tail`, `sed -n` and the like on
+  literal paths count. `cat < file`, `awk`, `wc`, `xargs` and `find -exec` aren't reads.
+- `make -C dir test` and other commands with unclear parts are `Other`.
+- `CommandKind::Git` doesn't say whether the command changed the repository; `tool` holds
+  the subcommand (`git commit`).
+- `AnswerDraft` doesn't cover declining or cancelling an MCP elicitation; apps show those
+  as plain options.
+- Secret answers live in memory as plain strings. Apps must not log or persist them.
+- The agent's own asks aren't in core's `asks()`; merge `open_agent_asks()` (`openAgentAsks()`
+  in the bindings).
+- A user message sent mid-turn starts a new turn.
 
 ## Development
 

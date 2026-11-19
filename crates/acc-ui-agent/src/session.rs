@@ -2,9 +2,12 @@
 //! what they show, which asks wait for the user, and how to answer one.
 //!
 //! The core session model treats these calls as ordinary tool items (its
-//! [`SessionView::item_spec`] shows their raw output). An app that enabled
-//! the agent layer asks here instead and shows [`AgentCall::spec`].
+//! [`SessionView::item_spec`] shows their raw output): core stays free of
+//! the agent layer, and the calls' names and answer states are this
+//! crate's. An app that enabled the agent layer takes [`item_spec`] here
+//! instead, which shows a call's own spec.
 
+use acc_ui::Normalized;
 use serde_json::{Map, Value};
 
 use acc_ui::SessionView;
@@ -74,6 +77,18 @@ pub enum Delivery {
 /// The `acc_ui` call item `id` is, if it is one.
 pub fn agent_call(view: &SessionView, id: &str) -> Option<AgentCall> {
     of_item(view.item(id)?)
+}
+
+/// Item `id` as a spec, like [`SessionView::item_spec`], except that an
+/// `acc_ui` call shows the spec it carries (normalised as untrusted, so it
+/// holds no requests). A call whose spec didn't survive normalising shows
+/// as the tool call it is. An ask's inputs answer through
+/// [`AgentCall::answer`], and only while [`AgentCall::awaits_answer`].
+pub fn item_spec(view: &SessionView, id: &str) -> Option<Normalized> {
+    match agent_call(view, id) {
+        Some(call) if call.call.spec.spec.is_some() => Some(call.call.spec),
+        _ => view.item_spec(id),
+    }
 }
 
 /// Every `acc_ui` call in the session, in order.

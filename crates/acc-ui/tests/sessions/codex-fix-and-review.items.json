@@ -7,13 +7,6 @@
     "summary": ""
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "agent_message",
     "nodes": [
       "stack",
@@ -30,13 +23,6 @@
     "summary": "$ pwd && rg --files -g 'AGENTS.md' -g 'inventory.py' -g 'test_inventory.py' -g 'README.md'"
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "command_execution",
     "nodes": [
       "disclosure",
@@ -45,26 +31,12 @@
     "summary": "$ cat AGENTS.md && cat inventory.py && cat test_inventory.py"
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "file_change",
     "nodes": [
       "disclosure",
       "diff"
     ],
     "summary": "Edited README.md +10 −0, inventory.py +4 −3, test_inventory.py +5 −0"
-  },
-  {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
   },
   {
     "kind": "agent_message",
@@ -98,13 +70,6 @@
     "summary": ""
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "subagent",
     "nodes": [
       "disclosure",
@@ -113,25 +78,11 @@
     "summary": "inventory_edge_review: Spawn agent inventory_edge_review"
   },
   {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
-  },
-  {
     "kind": "subagent",
     "nodes": [
       "disclosure"
     ],
     "summary": "Wait for agent"
-  },
-  {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
   },
   {
     "kind": "command_execution",
@@ -148,13 +99,6 @@
       "output"
     ],
     "summary": "$ cat inventory.py && cat test_inventory.py && cat README.md"
-  },
-  {
-    "kind": "reasoning",
-    "nodes": [
-      "disclosure"
-    ],
-    "summary": "Thought"
   },
   {
     "kind": "agent_message",

@@ -21,6 +21,6 @@ pub mod submit;
 
 pub use host::{Answer, McpServer, answer_script, mcp_server, server_script, setup_script};
 pub use recognize::{AskState, UiCall, UiCallKind, recognize_tool};
-pub use session::{AgentCall, Delivery, agent_call, agent_calls, open_agent_asks};
+pub use session::{AgentCall, Delivery, agent_call, agent_calls, item_spec, open_agent_asks};
 pub use skill::{instructions, skill_markdown};
 pub use submit::{Submission, parse_submit, submit_prompt};

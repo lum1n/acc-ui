@@ -252,6 +252,12 @@ fn transcripts_restore_the_same_regions_as_live_events() {
                 json!({"turns": turns, "files": files, "commands": commands, "subagents": subagents, "now": s.now.len()})
             };
             assert_eq!(strip(&restored), strip(&live), "{name} from {from}");
+            // Without the snapshot's spec, the harness comes from the items.
+            assert_eq!(
+                restored.header().harness,
+                live.header().harness,
+                "{name} from {from}"
+            );
             if from == "snapshot" {
                 assert_eq!(restored.header().title.as_deref(), Some("Saved"));
                 assert_eq!(restored.header().root.as_deref(), Some("/work"));
@@ -266,6 +272,40 @@ fn transcripts_restore_the_same_regions_as_live_events() {
 }
 
 #[test]
+fn restoring_bare_items_infers_the_harness() {
+    let restore = |items: Value| SessionView::from_transcript(&items.to_string()).unwrap();
+    let bash = |id: &str| {
+        json!({"id":id,"kind":"command_execution","status":"completed","seq":1,
+               "detail":{"type":"command","tool":"Bash","command":"ls","output":"a"}})
+    };
+    let prompt = json!({"id":"u","kind":"user_message","status":"completed","text":"Go","detail":{"type":"text"},"seq":0});
+    let claude = restore(json!([prompt, bash("toolu_01A")]));
+    assert_eq!(claude.header().harness.as_deref(), Some("claude"));
+    // So the simple-command rule applies.
+    assert_eq!(claude.commands()[0].outcome, CommandOutcome::Succeeded);
+
+    let codex = json!({"id":"exec-1","kind":"command_execution","status":"completed","seq":2,
+        "detail":{"type":"command","tool":"commandExecution","command":"ls","output":"a"}});
+    assert_eq!(
+        restore(json!([prompt, codex])).header().harness.as_deref(),
+        Some("codex")
+    );
+    // A Bash tool without Claude's ids, or both kinds at once: unknown.
+    for items in [
+        json!([prompt, bash("call_1")]),
+        json!([prompt, bash("toolu_01A"), codex]),
+    ] {
+        let view = restore(items);
+        assert_eq!(view.header().harness, None);
+        assert_eq!(view.commands()[0].outcome, CommandOutcome::Unknown);
+    }
+    // A snapshot's own harness wins.
+    let snapshot =
+        json!({"spec": {"harness": "opencode"}, "transcript": {"items": [prompt, bash("toolu_01A")]}});
+    assert_eq!(restore(snapshot).header().harness.as_deref(), Some("opencode"));
+}
+
+#[test]
 fn restoring_keeps_a_running_turn_open() {
     let items = json!([
         {"id":"u","kind":"user_message","status":"completed","text":"Go","detail":{"type":"text"},"seq":0},
@@ -275,6 +315,8 @@ fn restoring_keeps_a_running_turn_open() {
     assert!(view.turns()[0].open);
     assert_eq!(view.now()[0].kind, ActivityKind::Building);
     assert_eq!(view.commands()[0].output_tail, "building");
+    assert_eq!(view.item("c").unwrap().command_output(), Some("building"));
+    assert_eq!(view.item("u").unwrap().command_output(), None);
 }
 
 #[test]
@@ -448,6 +490,11 @@ fn turns_count_the_steps_they_fold() {
     let item =
         |id: &str, kind: &str| json!({"type":"item_started","id":id,"kind":kind,"detail":{"type":"text"}});
     apply(&mut view, &[item("u", "user_message"), item("r", "reasoning")]);
+    assert_eq!(view.turns()[0].steps, 0, "reasoning counts once it has text");
+    apply(
+        &mut view,
+        &[json!({"type":"item_delta","id":"r","text":"Look first."})],
+    );
     assert_eq!(view.turns()[0].steps, 1);
     apply(&mut view, &[item("a1", "agent_message")]);
     assert_eq!(view.turns()[0].steps, 1, "the latest message is the narrative");
@@ -460,6 +507,144 @@ fn turns_count_the_steps_they_fold() {
     );
     let t = &view.turns()[0];
     assert_eq!((t.steps, t.narrative_item.as_deref()), (3, Some("a2")));
+}
+
+#[test]
+fn reasoning_without_text_shows_nothing() {
+    let mut view = SessionView::new();
+    let start =
+        |id: &str, kind: &str| json!({"type":"item_started","id":id,"kind":kind,"detail":{"type":"text"}});
+    let done =
+        |id: &str| json!({"type":"item_completed","id":id,"status":"completed","detail":{"type":"text"}});
+    apply(
+        &mut view,
+        &[
+            start("u", "user_message"),
+            // Codex with summaries off: no text, ever.
+            start("r1", "reasoning"),
+            done("r1"),
+            // Text arrives after a later item started: still in order.
+            start("r2", "reasoning"),
+            json!({"type":"item_started","id":"c","kind":"command_execution","detail":{"type":"command","command":"ls"}}),
+            json!({"type":"item_delta","id":"r2","text":"  "}),
+            json!({"type":"item_delta","id":"r2","text":"Check the tests."}),
+            done("r2"),
+        ],
+    );
+    assert!(view.item_spec("r1").is_none());
+    let t = &view.turns()[0];
+    assert_eq!(t.items, ["u", "r2", "c"]);
+    assert_eq!(t.steps, 2);
+    let spec = view.item_spec("r2").unwrap().spec.unwrap();
+    assert_eq!(spec["nodes"][0]["summary"], "Thought");
+    // Running and still empty: Now says thinking, but there is no spec.
+    apply(&mut view, &[start("r3", "reasoning")]);
+    assert!(view.item_spec("r3").is_none());
+    let now = view.now();
+    assert_eq!(
+        now.last().map(|a| (a.item_id.as_str(), a.kind)),
+        Some(("r3", ActivityKind::Thinking))
+    );
+}
+
+#[test]
+fn reads_and_searches_show_files() {
+    let mut view = SessionView::new();
+    view.set_root("/w");
+    let tool = |id: &str, tool: &str, kind: &str, title: &str, input: Value, output: &str| {
+        let detail =
+            json!({"type":"tool","tool":tool,"kind":kind,"title":title,"input":input,"output":output});
+        [
+            json!({"type":"item_started","id":id,"kind":"tool_call","detail":detail}),
+            json!({"type":"item_completed","id":id,"status":"completed","detail":detail}),
+        ]
+    };
+    let nodes = |view: &SessionView, id: &str| {
+        let out = view.item_spec(id).unwrap();
+        assert!(out.errors.is_empty(), "{id}: {:?}", out.errors);
+        out.spec.unwrap()["nodes"].as_array().unwrap().clone()
+    };
+    apply(
+        &mut view,
+        &[json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}})],
+    );
+    apply(
+        &mut view,
+        &tool(
+            "r",
+            "Read",
+            "read",
+            "/w/src/a.rs",
+            json!({"file_path":"/w/src/a.rs","offset":10,"limit":2}),
+            "    10\tfn a() {}\n    11→fn b() {}\n\n<system-reminder>\nBe careful.\n</system-reminder>\n",
+        ),
+    );
+    let n = nodes(&view, "r");
+    assert_eq!(n[0]["summary"], "Read src/a.rs");
+    assert_eq!(n[1], json!({"type":"file","path":"src/a.rs","line":10}));
+    assert_eq!(
+        n[2],
+        json!({"type":"code","text":"fn a() {}\nfn b() {}","language":"rust"})
+    );
+
+    // Output that isn't numbered stays as it is; no offset, no line.
+    apply(
+        &mut view,
+        &tool(
+            "r2",
+            "Read",
+            "read",
+            "/w/notes",
+            json!({"file_path":"/w/notes"}),
+            "plain text",
+        ),
+    );
+    let n = nodes(&view, "r2");
+    assert_eq!(n[1], json!({"type":"file","path":"notes"}));
+    assert_eq!(n[2], json!({"type":"code","text":"plain text"}));
+
+    apply(
+        &mut view,
+        &tool(
+            "g",
+            "Grep",
+            "other",
+            "fn main",
+            json!({"pattern":"fn main"}),
+            "Found 2 files\n/w/src/main.rs\n/w/build.rs",
+        ),
+    );
+    let n = nodes(&view, "g");
+    let kinds: Vec<_> = n.iter().map(|n| n["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["disclosure", "file", "file"]);
+    assert_eq!(n[1]["path"], "src/main.rs");
+
+    // Matching lines stay code.
+    apply(
+        &mut view,
+        &tool(
+            "g2",
+            "Grep",
+            "other",
+            "fn main",
+            json!({"pattern":"fn main","output_mode":"content"}),
+            "/w/src/main.rs:1:fn main() {}",
+        ),
+    );
+    assert_eq!(nodes(&view, "g2")[1]["type"], "code");
+
+    apply(
+        &mut view,
+        &tool(
+            "gl",
+            "Glob",
+            "other",
+            "**/*.rs",
+            json!({"pattern":"**/*.rs"}),
+            "/w/src/a.rs\n/w/src/b.rs",
+        ),
+    );
+    assert_eq!(nodes(&view, "gl").len(), 3);
 }
 
 #[test]
@@ -834,6 +1019,41 @@ fn recognised_commands_feed_outcomes_files_and_digests() {
         d.summary(),
         "Read 2 files · ran 4 commands, 1 failed · 4 tests passed"
     );
+}
+
+#[test]
+fn set_root_resolves_earlier_relative_reads() {
+    let mut view = SessionView::new();
+    let cmd = |id: &str, command: &str| {
+        let detail = json!({"type":"command","tool":"Bash","command":command,"output":"x"});
+        [
+            json!({"type":"item_started","id":id,"kind":"command_execution","detail":detail}),
+            json!({"type":"item_completed","id":id,"status":"completed","detail":detail}),
+        ]
+    };
+    apply(
+        &mut view,
+        &[json!({"type":"item_started","id":"u","kind":"user_message","detail":{"type":"text"}})],
+    );
+    apply(&mut view, &cmd("a", "cat src/a.rs /abs/b.rs"));
+    apply(&mut view, &cmd("b", "head -5 src/a.rs"));
+    // Without a root, only the absolute path is known.
+    assert_eq!(view.command("a").unwrap().reads, ["/abs/b.rs"]);
+    assert_eq!(view.turns()[0].digest.files_read, 1);
+
+    view.set_root("/w");
+    assert_eq!(view.command("a").unwrap().reads, ["/w/src/a.rs", "/abs/b.rs"]);
+    let a = view.file("/w/src/a.rs").unwrap();
+    assert_eq!((a.display.as_str(), a.reads), ("src/a.rs", 2));
+    assert_eq!(view.file("/abs/b.rs").unwrap().reads, 1, "not counted twice");
+    assert_eq!(view.turns()[0].digest.files_read, 2);
+
+    // Again, and later commands: still once each.
+    view.set_root("/w");
+    apply(&mut view, &cmd("c", "cat src/c.rs"));
+    assert_eq!(view.file("/w/src/a.rs").unwrap().reads, 2);
+    assert_eq!(view.file("/w/src/c.rs").unwrap().reads, 1);
+    assert_eq!(view.turns()[0].digest.files_read, 3);
 }
 
 #[test]

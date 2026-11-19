@@ -932,8 +932,8 @@ public protocol SessionViewProtocol: AnyObject, Sendable {
     func agentAnswer(itemId: String, session: String, valuesJson: String?) throws  -> AgentDelivery?
     
     /**
-     * The `acc_ui` call item `item_id` is; show its spec instead of
-     * `item_spec`.
+     * The `acc_ui` call item `item_id` is, with where an ask's answer
+     * stands. `item_spec` already shows its spec.
      */
     func agentCall(itemId: String)  -> AgentCall?
     
@@ -983,6 +983,8 @@ public protocol SessionViewProtocol: AnyObject, Sendable {
     /**
      * An item as a spec to render: a message's markdown as blocks, a
      * command with its output, a diff, a folded reasoning or tool call.
+     * An agent's own `acc_ui` call shows the spec it carries; answer an
+     * ask's inputs through `agent_call(item_id)`.
      */
     func itemSpec(id: String)  -> NormalizedSpec?
     
@@ -1116,8 +1118,8 @@ open func agentAnswer(itemId: String, session: String, valuesJson: String?)throw
 }
     
     /**
-     * The `acc_ui` call item `item_id` is; show its spec instead of
-     * `item_spec`.
+     * The `acc_ui` call item `item_id` is, with where an ask's answer
+     * stands. `item_spec` already shows its spec.
      */
 open func agentCall(itemId: String) -> AgentCall?  {
     return try!  FfiConverterOptionTypeAgentCall.lift(try! rustCall() {
@@ -1274,6 +1276,8 @@ open func item(id: String) -> Item?  {
     /**
      * An item as a spec to render: a message's markdown as blocks, a
      * command with its output, a diff, a folded reasoning or tool call.
+     * An agent's own `acc_ui` call shows the spec it carries; answer an
+     * ask's inputs through `agent_call(item_id)`.
      */
 open func itemSpec(id: String) -> NormalizedSpec?  {
     return try!  FfiConverterOptionTypeNormalizedSpec.lift(try! rustCall() {
@@ -2588,8 +2592,7 @@ public func FfiConverterTypeImageRef_lower(_ value: ImageRef) -> RustBuffer {
 
 
 /**
- * An item as the session keeps it. A command's full output isn't here;
- * [`CommandEntry`] has its tail.
+ * An item as the session keeps it.
  */
 public struct Item: Equatable, Hashable {
     public var id: String
@@ -2602,6 +2605,12 @@ public struct Item: Equatable, Hashable {
      */
     public var text: String
     public var detail: ItemDetail
+    /**
+     * A command's full output: what it completed with, or what streamed
+     * so far while it runs. `None` for other items. [`CommandEntry`] has
+     * its tail.
+     */
+    public var output: String?
     /**
      * A prompt's images, or the image a tool viewed or generated.
      */
@@ -2616,6 +2625,11 @@ public struct Item: Equatable, Hashable {
          * Message or reasoning text.
          */text: String, detail: ItemDetail, 
         /**
+         * A command's full output: what it completed with, or what streamed
+         * so far while it runs. `None` for other items. [`CommandEntry`] has
+         * its tail.
+         */output: String?, 
+        /**
          * A prompt's images, or the image a tool viewed or generated.
          */images: [ImageRef], startedAtMs: UInt64?, completedAtMs: UInt64?) {
         self.id = id
@@ -2625,6 +2639,7 @@ public struct Item: Equatable, Hashable {
         self.status = status
         self.text = text
         self.detail = detail
+        self.output = output
         self.images = images
         self.startedAtMs = startedAtMs
         self.completedAtMs = completedAtMs
@@ -2653,6 +2668,7 @@ public struct FfiConverterTypeItem: FfiConverterRustBuffer {
                 status: FfiConverterTypeItemStatus.read(from: &buf), 
                 text: FfiConverterString.read(from: &buf), 
                 detail: FfiConverterTypeItemDetail.read(from: &buf), 
+                output: FfiConverterOptionString.read(from: &buf), 
                 images: FfiConverterSequenceTypeImageRef.read(from: &buf), 
                 startedAtMs: FfiConverterOptionUInt64.read(from: &buf), 
                 completedAtMs: FfiConverterOptionUInt64.read(from: &buf)
@@ -2667,6 +2683,7 @@ public struct FfiConverterTypeItem: FfiConverterRustBuffer {
         FfiConverterTypeItemStatus.write(value.status, into: &buf)
         FfiConverterString.write(value.text, into: &buf)
         FfiConverterTypeItemDetail.write(value.detail, into: &buf)
+        FfiConverterOptionString.write(value.output, into: &buf)
         FfiConverterSequenceTypeImageRef.write(value.images, into: &buf)
         FfiConverterOptionUInt64.write(value.startedAtMs, into: &buf)
         FfiConverterOptionUInt64.write(value.completedAtMs, into: &buf)
@@ -7837,7 +7854,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_acc_ui_ffi_checksum_method_sessionview_agent_answer() != 35002) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_acc_ui_ffi_checksum_method_sessionview_agent_call() != 45434) {
+    if (uniffi_acc_ui_ffi_checksum_method_sessionview_agent_call() != 32277) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_acc_ui_ffi_checksum_method_sessionview_agent_calls() != 24179) {
@@ -7879,7 +7896,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_acc_ui_ffi_checksum_method_sessionview_item() != 18288) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_acc_ui_ffi_checksum_method_sessionview_item_spec() != 49091) {
+    if (uniffi_acc_ui_ffi_checksum_method_sessionview_item_spec() != 46994) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_acc_ui_ffi_checksum_method_sessionview_items() != 52994) {

@@ -55,6 +55,10 @@ impl SessionView {
     /// prompts: each top-level user message starts one. The last turn stays
     /// open while any item still runs. A snapshot also gives the harness,
     /// working directory, title, model, usage, quota and pending requests.
+    /// Without a harness, it's inferred where the items leave no doubt
+    /// (Claude Code's `toolu_` calls to its own tools, Codex's
+    /// `commandExecution` and `fileChange` items), and stays unknown
+    /// otherwise.
     pub fn from_transcript(json: &str) -> Result<Self, serde_json::Error> {
         let v: Value = serde_json::from_str(json)?;
         let items = v
@@ -79,7 +83,7 @@ impl SessionView {
         if let Some(cwd) = text("cwd") {
             view.set_root(cwd);
         }
-        view.header.harness = text("harness");
+        view.header.harness = text("harness").or_else(|| infer_harness(&items).map(str::to_owned));
         view.header.model = text("model");
         view.header.native_id = text("native_id");
         if let Some(title) = text("title") {
@@ -141,5 +145,54 @@ impl SessionView {
         }
         view.restoring = false;
         Ok(view)
+    }
+}
+
+/// Claude Code's built-in tools, as its tool calls name them.
+const CLAUDE_TOOLS: &[&str] = &[
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "Grep",
+    "Glob",
+    "Task",
+    "Agent",
+    "WebFetch",
+    "WebSearch",
+    "TodoWrite",
+    "ToolSearch",
+    "ExitPlanMode",
+    "AskUserQuestion",
+    "Skill",
+    "BashOutput",
+    "KillShell",
+];
+
+/// Codex app-server item types that only Codex sends.
+const CODEX_TOOLS: &[&str] = &["commandExecution", "fileChange"];
+
+/// The harness that made `items`, when they say so unambiguously: a
+/// Claude Code tool called with a `toolu_` id, or a Codex item type, and
+/// not both.
+fn infer_harness(items: &[StoredItem]) -> Option<&'static str> {
+    let (mut claude, mut codex) = (false, false);
+    for item in items {
+        let tool = match &item.detail {
+            Detail::Tool { tool, .. }
+            | Detail::Command { tool, .. }
+            | Detail::FileChange { tool, .. }
+            | Detail::Subagent { tool, .. } => tool.as_str(),
+            Detail::Text | Detail::Unknown => continue,
+        };
+        claude |= item.id.starts_with("toolu_") && CLAUDE_TOOLS.contains(&tool);
+        codex |= CODEX_TOOLS.contains(&tool);
+    }
+    match (claude, codex) {
+        (true, false) => Some("claude"),
+        (false, true) => Some("codex"),
+        _ => None,
     }
 }

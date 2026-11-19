@@ -117,6 +117,9 @@ pub struct SessionView {
     /// Reads already counted, as (item id, path), so an item completed
     /// twice reads its files once.
     reads_seen: HashSet<(String, String)>,
+    /// Commands recognised with neither a `cwd` nor a root, whose relative
+    /// reads [`SessionView::set_root`] resolves later.
+    unresolved: HashSet<String>,
     /// The latest time any event reported, ms since the Unix epoch.
     last_seen_ms: Option<u64>,
     /// Rebuilding from a transcript: a new prompt ends the turn before it
@@ -131,11 +134,30 @@ impl SessionView {
 
     /// Sets the session's working directory, which the client knows from
     /// how it started the session. Paths under it are shown relative.
+    /// Commands seen before without a `cwd` have their relative reads
+    /// resolved against it now.
     pub fn set_root(&mut self, root: impl Into<String>) {
         self.header.root = Some(root.into());
         self.root_fixed = true;
         for f in &mut self.files {
             f.display = display_path(self.header.root.as_deref(), &f.path);
+        }
+        let mut ch = Changes::default();
+        let mut pending: Vec<usize> = self
+            .unresolved
+            .drain()
+            .filter_map(|id| self.item_index.get(&id).copied())
+            .collect();
+        pending.sort_unstable();
+        let mut turns = Vec::new();
+        for i in pending {
+            let item = self.items[i].clone();
+            self.upsert_command(&item, &mut ch);
+            self.record_command_reads(&item, &mut ch);
+            Changes::push(&mut turns, item.turn);
+        }
+        for t in turns {
+            self.refresh_digest(t, &mut ch);
         }
     }
 
@@ -406,7 +428,9 @@ impl SessionView {
             None if parent.is_none() && kind == ItemKind::UserMessage => self.new_turn(ch),
             None => self.open_turn(ch),
         };
-        if parent.is_none() {
+        // Reasoning joins the turn once it has text: Codex sends empty
+        // reasoning items when summaries are off, and they show nothing.
+        if parent.is_none() && kind != ItemKind::Reasoning {
             let t = &mut self.turns[turn];
             t.items.push(id.clone());
             if kind == ItemKind::AgentMessage {
@@ -477,9 +501,13 @@ impl SessionView {
             // ACC's stand-in for an image-only prompt, when it sent refs.
             Detail::Text if text == IMAGE_PLACEHOLDER && item.text.is_empty() && !item.images.is_empty() => {}
             Detail::Text => {
+                let was_blank = item.text.trim().is_empty();
                 item.text.push_str(text);
                 Changes::push(&mut ch.items, id.to_owned());
                 let (kind, parent, turn) = (item.kind, item.parent.is_none(), item.turn);
+                if kind == ItemKind::Reasoning && parent && was_blank && !text.trim().is_empty() {
+                    self.reasoning_shown(i, ch);
+                }
                 let t = &mut self.turns[turn];
                 if t.narrative_item.as_deref() == Some(id) {
                     t.narrative.get_or_insert_with(String::new).push_str(text);
@@ -498,6 +526,21 @@ impl SessionView {
             }
             _ => {}
         }
+    }
+
+    /// Reasoning item `i` got its first text: it joins its turn's items,
+    /// in order, as a step.
+    fn reasoning_shown(&mut self, i: usize, ch: &mut Changes) {
+        let item = &self.items[i];
+        let t = &mut self.turns[item.turn];
+        let at = t
+            .items
+            .iter()
+            .position(|other| self.item_index.get(other).is_some_and(|&o| o > i))
+            .unwrap_or(t.items.len());
+        t.items.insert(at, item.id.clone());
+        t.steps += 1;
+        Changes::push(&mut ch.turns, item.turn);
     }
 
     /// A new detail, from a start, update or completion. `status` is set
@@ -532,13 +575,8 @@ impl SessionView {
         match &item.detail {
             Detail::Command { .. } => {
                 self.upsert_command(&item, ch);
-                if status == Some(ItemStatus::Completed)
-                    && let Some(c) = self.command(&item.id)
-                    && c.outcome != CommandOutcome::Failed
-                {
-                    for p in c.reads.clone() {
-                        self.record_read(&item, &p, ch);
-                    }
+                if status == Some(ItemStatus::Completed) {
+                    self.record_command_reads(&item, ch);
                 }
             }
             Detail::Subagent { .. } => self.upsert_subagent(&item, ch),
@@ -581,7 +619,6 @@ impl SessionView {
         let Detail::Command {
             command,
             cwd,
-            output,
             exit_code,
             ..
         } = &item.detail
@@ -598,10 +635,16 @@ impl SessionView {
             }
             ch.header = true;
         }
-        let output = if output.is_empty() { &item.output } else { output };
+        let output = item.command_output().unwrap_or_default();
         let (output_tail, output_lines) = tail(output);
         let display = unwrap_shell(command);
-        let mut rec = command::recognise(&display, cwd.as_deref().or(self.header.root.as_deref()));
+        let base = cwd.as_deref().or(self.header.root.as_deref());
+        if base.is_none() {
+            self.unresolved.insert(item.id.clone());
+        } else {
+            self.unresolved.remove(&item.id);
+        }
+        let mut rec = command::recognise(&display, base);
         if item.status != ItemStatus::Running {
             rec.read_output(output);
         }
@@ -642,6 +685,18 @@ impl SessionView {
             }
         }
         Changes::push(&mut ch.commands, item.id.clone());
+    }
+
+    /// The files a completed command showed, unless it failed.
+    fn record_command_reads(&mut self, item: &ItemView, ch: &mut Changes) {
+        if item.status == ItemStatus::Completed
+            && let Some(c) = self.command(&item.id)
+            && c.outcome != CommandOutcome::Failed
+        {
+            for p in c.reads.clone() {
+                self.record_read(item, &p, ch);
+            }
+        }
     }
 
     fn update_command_output(&mut self, id: &str, output: &str, ch: &mut Changes) {

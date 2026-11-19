@@ -955,8 +955,7 @@ impl From<s::Turn> for Turn {
     }
 }
 
-/// An item as the session keeps it. A command's full output isn't here;
-/// [`CommandEntry`] has its tail.
+/// An item as the session keeps it.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct Item {
     pub id: String,
@@ -967,6 +966,10 @@ pub struct Item {
     /// Message or reasoning text.
     pub text: String,
     pub detail: ItemDetail,
+    /// A command's full output: what it completed with, or what streamed
+    /// so far while it runs. `None` for other items. [`CommandEntry`] has
+    /// its tail.
+    pub output: Option<String>,
     /// A prompt's images, or the image a tool viewed or generated.
     pub images: Vec<ImageRef>,
     pub started_at_ms: Option<u64>,
@@ -975,12 +978,14 @@ pub struct Item {
 
 impl From<s::ItemView> for Item {
     fn from(i: s::ItemView) -> Self {
+        let output = i.command_output().map(str::to_owned);
         Self {
             id: i.id,
             kind: i.kind.into(),
             parent: i.parent,
             turn: n(i.turn),
             status: i.status.into(),
+            output,
             text: i.text,
             detail: i.detail.into(),
             images: images(i.images),
@@ -1187,8 +1192,10 @@ impl SessionView {
 
     /// An item as a spec to render: a message's markdown as blocks, a
     /// command with its output, a diff, a folded reasoning or tool call.
+    /// An agent's own `acc_ui` call shows the spec it carries; answer an
+    /// ask's inputs through `agent_call(item_id)`.
     pub fn item_spec(&self, id: String) -> Option<NormalizedSpec> {
-        self.lock().item_spec(&id).map(Into::into)
+        acc_ui_agent::item_spec(&self.lock(), &id).map(Into::into)
     }
 
     /// A waiting ask as a spec: a `request` node whose options answer it.
@@ -1208,8 +1215,8 @@ impl SessionView {
             .collect()
     }
 
-    /// The `acc_ui` call item `item_id` is; show its spec instead of
-    /// `item_spec`.
+    /// The `acc_ui` call item `item_id` is, with where an ask's answer
+    /// stands. `item_spec` already shows its spec.
     pub fn agent_call(&self, item_id: String) -> Option<AgentCall> {
         acc_ui_agent::agent_call(&self.lock(), &item_id).map(Into::into)
     }
