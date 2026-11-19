@@ -1163,6 +1163,37 @@ fn prompt_images_come_from_acc_refs() {
 }
 
 #[test]
+fn restored_prompts_keep_their_images() {
+    let image = json!({"media_type": "image/png", "bytes": 3, "sha256": SHA});
+    let item = |id: &str, seq: u64, extra: serde_json::Value| {
+        let mut v = json!({"id": id, "kind": "user_message", "status": "completed",
+            "text": "[image]", "detail": {"type": "text"}, "seq": seq});
+        v.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        v
+    };
+    let snapshot = json!({"transcript": {"items": [
+        // Newer ACC: refs on the item (and still in native).
+        item("u1", 1, json!({"images": [image], "native": {"images": [image]}})),
+        // Older ACC: refs only in native.
+        item("u2", 2, json!({"native": {"type": "userMessage", "images": [{"path": "/w/a.png"}]}})),
+        // No refs at all: the stand-in stays.
+        item("u3", 3, json!({})),
+    ]}});
+    let view = SessionView::from_transcript(&snapshot.to_string()).unwrap();
+    let turns = view.turns();
+    assert_eq!(turns[0].prompt.as_deref(), Some(""));
+    assert_eq!(turns[0].prompt_images.len(), 1);
+    assert_eq!(turns[0].prompt_images[0].sha256.as_deref(), Some(SHA));
+    assert_eq!(turns[1].prompt_images[0].path.as_deref(), Some("/w/a.png"));
+    assert_eq!(
+        (turns[2].prompt.as_deref(), turns[2].prompt_images.len()),
+        (Some("[image]"), 0)
+    );
+}
+
+#[test]
 fn codex_image_tools_carry_their_image() {
     let mut view = SessionView::new();
     view.set_root("/w");
