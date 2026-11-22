@@ -90,6 +90,11 @@ mod tests {
             unwrap_shell(r#"/usr/bin/zsh -lc "rg --files -g '"'!**/.git/**'"'""#),
             "rg --files -g '!**/.git/**'"
         );
+        // Bare pieces and escapes join the quoted ones into one word.
+        assert_eq!(unwrap_shell("sh -c 'a'b\"c\""), "abc");
+        assert_eq!(unwrap_shell("sh -c 'a'\\ b"), "a b");
+        // In double quotes a backslash keeps other characters, and drops a newline.
+        assert_eq!(unwrap_shell("bash -c \"a\\nb\\\nc\""), "a\\nbc");
     }
 
     #[test]
@@ -99,6 +104,10 @@ mod tests {
             "bash script.sh",
             "zsh -lc 'unterminated",
             "zsh -lc 'a' 'b'",
+            "zsh -lc 'a'\t'b'",
+            "bash -c \"echo",
+            "bash -c \"a\\",
+            "sh -c 'a'\\",
             "zsh --login -c 'x'",
         ] {
             assert_eq!(unwrap_shell(c), c);

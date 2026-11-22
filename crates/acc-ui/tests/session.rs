@@ -785,6 +785,26 @@ fn harness_title_wins_over_the_prompt() {
 }
 
 #[test]
+fn harness_titles_are_shortened_like_prompts() {
+    let mut view = SessionView::new();
+    // The first non-empty line of a multi-line title.
+    apply(
+        &mut view,
+        &[json!({"type":"title_changed","title":"\n  Fix the login bug  \nand more"})],
+    );
+    assert_eq!(view.header().title.as_deref(), Some("Fix the login bug"));
+    // A blank title keeps the last one.
+    apply(&mut view, &[json!({"type":"title_changed","title":" \n\t "})]);
+    assert_eq!(view.header().title.as_deref(), Some("Fix the login bug"));
+    // A long one is cut at a word boundary, with an ellipsis.
+    let long = "word ".repeat(30);
+    apply(&mut view, &[json!({"type":"title_changed","title":long})]);
+    let title = view.header().title.clone().unwrap();
+    assert!(title.starts_with("word word") && title.ends_with("d…"), "{title}");
+    assert!(title.chars().count() <= 81, "{title}");
+}
+
+#[test]
 fn now_shows_running_items_and_coordination() {
     let mut view = SessionView::new();
     view.set_root("/work");
